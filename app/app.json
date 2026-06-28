@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Parla",
+    "slug": "sprachapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0B0F",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren."
+      },
+      "bundleIdentifier": "com.afitterling.sprachapp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7a1ef937-99a2-49f0-b348-1f095849b078"
+      }
+    },
+    "owner": "afitterling"
+  }
+}

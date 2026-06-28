@@ -1,0 +1,10 @@
+{
+  "name": "parla-landing",
+  "type": "module",
+  "scripts": {
+    "deploy": "sst deploy"
+  },
+  "devDependencies": {
+    "sst": "^3"
+  }
+}

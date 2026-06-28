@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="520" viewBox="0 0 360 520" role="img" aria-label="App-Screenshot">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff5c00" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0.30"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="358" height="518" rx="36" fill="#16161d" stroke="#2a2a38" stroke-width="2"/>
+  <rect x="16" y="16" width="328" height="488" rx="26" fill="url(#g)"/>
+  <rect x="16" y="16" width="328" height="488" rx="26" fill="#0b0b0f" fill-opacity="0.55"/>
+  <rect x="120" y="40" width="120" height="8" rx="4" fill="#2a2a38"/>
+  <rect x="40" y="120" width="200" height="14" rx="7" fill="#ff5c00" fill-opacity="0.85"/>
+  <rect x="40" y="146" width="280" height="10" rx="5" fill="#22d3ee" fill-opacity="0.55"/>
+  <rect x="40" y="168" width="240" height="10" rx="5" fill="#2a2a38"/>
+  <rect x="40" y="230" width="260" height="60" rx="14" fill="#1c1c26" stroke="#2a2a38"/>
+  <rect x="40" y="306" width="200" height="50" rx="14" fill="#22d3ee" fill-opacity="0.13" stroke="#22d3ee" stroke-opacity="0.4"/>
+  <circle cx="300" cy="452" r="22" fill="#ff5c00"/>
+  <text x="180" y="412" text-anchor="middle" font-family="-apple-system, Segoe UI, Roboto, sans-serif" font-size="16" font-weight="700" fill="#6a6a7c">App-Screenshot</text>
+</svg>
