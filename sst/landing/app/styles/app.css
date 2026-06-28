@@ -98,6 +98,32 @@ nav .wrap {
   color: var(--text);
 }
 
+.langswitch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.langswitch a.lang {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px 7px;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.langswitch a.lang:hover {
+  color: var(--text);
+}
+
+.langswitch a.lang.active {
+  color: var(--accent2);
+  background: rgba(34, 211, 238, 0.12);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -568,6 +594,15 @@ footer {
 
   .navlinks a:not(.btn) {
     display: none;
+  }
+
+  /* keep the language switch reachable on mobile */
+  .langswitch a.lang {
+    display: inline-flex;
+  }
+  .langswitch {
+    padding-left: 0;
+    border-left: none;
   }
 
   h1 {
