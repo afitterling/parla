@@ -12,8 +12,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Settings, VocabItem } from '../storage';
-import { findLanguage } from '../languages';
+import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
+import { SpeakButton } from '../components/SpeakButton';
 import { useT } from '../i18n/I18nContext';
 import { TFn } from '../i18n';
 
@@ -112,6 +113,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
 }
 
 function Row({ item, onRemove, t }: { item: VocabItem; onRemove: (id: string) => void; t: TFn }) {
+  const locale = speechLocale(findLanguage(item.lang));
   return (
     <SwipeRow onDelete={() => onRemove(item.id)} deleteLabel={t('swipe.delete')}>
       <View style={styles.row}>
@@ -121,6 +123,11 @@ function Row({ item, onRemove, t }: { item: VocabItem; onRemove: (id: string) =>
           {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
           {!!item.example && <Text style={styles.example}>„{item.example}"</Text>}
         </View>
+        <SpeakButton
+          text={item.example ? `${item.term}. ${item.example}` : item.term}
+          locale={locale}
+          style={{ marginLeft: 10 }}
+        />
       </View>
     </SwipeRow>
   );

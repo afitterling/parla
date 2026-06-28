@@ -9,12 +9,18 @@ export type Language = {
   nativeName: string;
   romanize?: boolean; // Asian scripts → show Pinyin/Romaji reading aid
   promptHint?: string; // extra instruction appended to the dialogue system prompt
+  speech?: string; // BCP-47 locale for text-to-speech (defaults to `code`)
 };
+
+// BCP-47 locale used by expo-speech for read-aloud. Falls back to the code.
+export function speechLocale(lang: Language): string {
+  return lang.speech ?? lang.code;
+}
 
 export const LANGUAGES: Language[] = [
   { code: 'de', whisper: 'de', label: 'Deutsch', flag: '🇩🇪', nativeName: 'Deutsch' },
   { code: 'en', whisper: 'en', label: 'Englisch', flag: '🇬🇧', nativeName: 'English' },
-  { code: 'zh', whisper: 'zh', label: 'Chinesisch', flag: '🇨🇳', nativeName: '中文', romanize: true },
+  { code: 'zh', whisper: 'zh', label: 'Chinesisch', flag: '🇨🇳', nativeName: '中文', romanize: true, speech: 'zh-CN' },
   {
     code: 'zh-TW',
     whisper: 'zh',

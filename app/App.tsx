@@ -87,6 +87,11 @@ export default function App() {
     handleSaveSettings({ ...settings, uiLanguage: code });
   }
 
+  function setDefaultMode(mode: 'free' | 'ask') {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, defaultMode: mode });
+  }
+
   function purchasePro() {
     // Stub — real in-app purchase wiring comes later.
     const t = makeT(resolveUiLang(settings?.uiLanguage ?? 'auto'));
@@ -181,8 +186,15 @@ export default function App() {
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={theme.colors.bg} />
       <View style={styles.header}>
-        <Text style={[styles.logo, styles.logoWord]}>Parla</Text>
-        <Text style={styles.tagline}>{t('app.tagline')}</Text>
+        <View style={styles.logoMark}>
+          <Text style={styles.logoMarkText}>文</Text>
+        </View>
+        <View style={styles.headerText}>
+          <Text style={styles.logo}>
+            Parl<Text style={styles.logoWord}>a</Text>
+          </Text>
+          <Text style={styles.tagline}>{t('app.tagline').toUpperCase()}</Text>
+        </View>
       </View>
 
       <View style={styles.body}>
@@ -217,6 +229,7 @@ export default function App() {
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
             setUiLanguage={setUiLanguage}
+            setDefaultMode={setDefaultMode}
             setPro={setPro}
             purchasePro={purchasePro}
             restorePurchases={restorePurchases}
@@ -253,13 +266,38 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingTop: Platform.OS === 'android' ? 16 : 4,
     paddingHorizontal: 20,
     paddingBottom: 10,
   },
-  logo: { fontSize: 26, fontWeight: '800', color: theme.colors.text },
+  logoMark: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent2,
+    shadowColor: theme.colors.accent,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  logoMarkText: { color: '#fff', fontSize: 24, fontWeight: '900', marginTop: -1 },
+  headerText: { flex: 1 },
+  logo: { fontSize: 30, fontWeight: '900', color: theme.colors.text, letterSpacing: -0.5 },
   logoWord: { color: theme.colors.accent },
-  tagline: { color: theme.colors.textFaint, fontSize: 12, marginTop: 2, letterSpacing: 0.3 },
+  tagline: {
+    color: theme.colors.accent2,
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 1,
+    letterSpacing: 2,
+  },
   body: { flex: 1 },
   tabBar: {
     flexDirection: 'row',

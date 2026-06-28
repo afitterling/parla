@@ -20,6 +20,7 @@ type Props = {
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
   setUiLanguage: (code: string) => void;
+  setDefaultMode: (mode: 'free' | 'ask') => void;
   setPro: (value: boolean) => void;
   purchasePro: () => void;
   restorePurchases: () => void;
@@ -30,6 +31,7 @@ export function SettingsScreen({
   onChangeInputLanguage,
   onChangeGoalLanguage,
   setUiLanguage,
+  setDefaultMode,
   setPro,
   purchasePro,
   restorePurchases,
@@ -76,6 +78,30 @@ export function SettingsScreen({
                   color={isActive ? theme.colors.accent : theme.colors.textMuted}
                 />
                 <Text style={[styles.langName, isActive && styles.langNameActive]}>{l.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionLabel}>{t('settings.startMode').toUpperCase()}</Text>
+        <View style={styles.modeGrid}>
+          {([
+            { mode: 'free' as const, icon: 'swap-horizontal-outline' as const, label: t('dialog.modeFree') },
+            { mode: 'ask' as const, icon: 'school-outline' as const, label: t('dialog.modeAsk') },
+          ]).map((m) => {
+            const isActive = settings.defaultMode === m.mode;
+            return (
+              <Pressable
+                key={m.mode}
+                style={[styles.modeTile, isActive && styles.langTileActive]}
+                onPress={() => setDefaultMode(m.mode)}
+              >
+                <Ionicons
+                  name={m.icon}
+                  size={22}
+                  color={isActive ? theme.colors.accent : theme.colors.textMuted}
+                />
+                <Text style={[styles.langName, isActive && styles.langNameActive]}>{m.label}</Text>
               </Pressable>
             );
           })}
@@ -172,6 +198,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   langGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  modeGrid: { flexDirection: 'row', gap: 10 },
+  modeTile: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
   langTile: {
     width: '31%',
     backgroundColor: theme.colors.card,

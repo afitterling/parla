@@ -71,7 +71,7 @@ export function DialogScreen({
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
   const wantPinyin = !!goalLang.romanize && settings.showPinyin;
-  const [mode, setMode] = useState<Mode>('ask');
+  const [mode, setMode] = useState<Mode>(settings.defaultMode === 'ask' ? 'ask' : 'free');
   const [openMenu, setOpenMenu] = useState<'input' | 'goal' | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [busy, setBusy] = useState<string | null>(null); // status label or null

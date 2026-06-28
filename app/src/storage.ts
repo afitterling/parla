@@ -30,6 +30,7 @@ export type Settings = {
   showPinyin: boolean; // show Pinyin/Romaji line for Asian goal languages
   isPro: boolean; // Parla Pro — removes the free-tier rate limit
   uiLanguage: string; // app UI language: a UiLang code or 'auto' (device locale)
+  defaultMode: 'free' | 'ask'; // which dialog mode starts active: 'free'=Interpreter, 'ask'=Coach
 };
 
 const VOCAB_KEY = 'parla.vocab';
@@ -117,6 +118,7 @@ export async function loadSettings(): Promise<Settings> {
     showPinyin: stored.showPinyin ?? true,
     isPro: stored.isPro ?? false,
     uiLanguage: stored.uiLanguage || 'auto',
+    defaultMode: stored.defaultMode === 'ask' ? 'ask' : 'free',
   };
 }
 

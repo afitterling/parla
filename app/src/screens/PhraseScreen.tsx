@@ -15,8 +15,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { PhraseItem, Settings, recentTags } from '../storage';
-import { findLanguage } from '../languages';
+import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
+import { SpeakButton } from '../components/SpeakButton';
 import { useT } from '../i18n/I18nContext';
 
 type Props = {
@@ -305,7 +306,12 @@ function PhraseRow({
       learnLabel={t('swipe.learn')}
     >
       <View style={styles.row}>
-        <Text style={styles.target}>{item.target}</Text>
+        <SpeakButton
+          text={item.target}
+          locale={speechLocale(findLanguage(item.lang))}
+          style={styles.speakBtn}
+        />
+        <Text style={[styles.target, styles.targetWithSpeak]}>{item.target}</Text>
         {!!item.pinyin && <Text style={styles.pinyin}>{item.pinyin}</Text>}
         {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
 
@@ -767,7 +773,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.cardBorder,
     padding: 14,
   },
+  speakBtn: { position: 'absolute', top: 10, right: 10, zIndex: 2 },
   target: { color: theme.colors.text, fontSize: 18, fontWeight: '700', lineHeight: 25 },
+  targetWithSpeak: { paddingRight: 44 },
   pinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: 2, fontWeight: '500' },
   trans: { color: theme.colors.textMuted, fontSize: 14, marginTop: 3 },
 
