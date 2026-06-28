@@ -123,6 +123,7 @@ export default function Index() {
             Parla
           </a>
           <div className="navlinks">
+            <a href="#story">Story</a>
             <a href="#features">Features</a>
             <a href="#how">So funktioniert&apos;s</a>
             <a className="btn" href="#waitlist">
@@ -172,6 +173,35 @@ export default function Index() {
           <img src="/hero.svg" alt="App-Screenshot von Parla" width={360} height={520} />
         </div>
       </header>
+
+      <section id="story" className="wrap">
+        <span className="eyebrow">Die Idee</span>
+        <h2>Warum Parla?</h2>
+        <div className="story">
+          <p className="storyquote">„Sprache ist immer Dialog."</p>
+          <p>
+            Gerade in Asien habe ich gelernt: Wenn du wirklich ankommen willst,
+            brauchst du ein Werkzeug an deiner Seite, mit dem du im richtigen
+            Moment schnell reagieren kannst.
+          </p>
+          <p>
+            Aber ich wollte kein blindes Tool, das stumpf für dich übersetzt —
+            sondern eines, das dich wirklich besser macht. Parla kann beides: Es
+            hilft dir, im Moment zu antworten, und trainiert gleichzeitig deine
+            eigenen Sprachfähigkeiten.
+          </p>
+          <p>
+            Dafür merkt sich Parla, was dir wirklich begegnet: deine Wörter,
+            deine Sätze, deine Situationen. So lernst du aus echten, selbst
+            erlebten Momenten — nicht aus abstrakten Vokabellisten.
+          </p>
+          <p className="storyclose">
+            Parla ist für alle, die mit minimalem Aufwand eine Sprache lernen
+            wollen. Für alle, die schnell kommunizieren und sich vom ersten
+            Moment an mit einer neuen Sprache verbinden möchten.
+          </p>
+        </div>
+      </section>
 
       <section id="features" className="wrap">
         <span className="eyebrow">Features</span>

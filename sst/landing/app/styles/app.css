@@ -404,6 +404,45 @@ h2 {
 }
 
 /* cta band */
+.story {
+  max-width: 780px;
+  margin-top: 20px;
+  border-left: 3px solid var(--accent);
+  padding-left: 30px;
+}
+
+.story p {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.75;
+  margin: 0 0 18px;
+}
+
+.storyquote {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.25;
+  margin-bottom: 26px !important;
+  background: linear-gradient(100deg, var(--accent), #ff9a4d);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.storyclose {
+  color: var(--text) !important;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .story {
+    padding-left: 20px;
+  }
+  .storyquote {
+    font-size: 26px;
+  }
+}
+
 .cta-band {
   background: linear-gradient(
     120deg,
