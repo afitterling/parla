@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import {
   Animated,
+  GestureResponderEvent,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -13,31 +14,49 @@ type Props = {
   children: React.ReactNode;
   onDelete?: () => void;
   onLearn?: () => void;
+  onTap?: () => void;
+  deleteLabel?: string;
+  learnLabel?: string;
 };
 
-const REVEAL = 88; // width of each action button
-const SNAP = 40; // drag distance past which we snap open
+const REVEAL = 84; // width of each action button
+const SNAP = 36; // drag distance past which we snap open
+const TAP_SLOP = 6; // movement under this (both axes) counts as a tap
 
-export function SwipeRow({ children, onDelete, onLearn }: Props) {
+export function SwipeRow({
+  children,
+  onDelete,
+  onLearn,
+  onTap,
+  deleteLabel = 'Löschen',
+  learnLabel = 'Lernen',
+}: Props) {
   const translateX = useRef(new Animated.Value(0)).current;
-  // Track the resting position so the pan gesture can be relative to it and a
-  // simple tap can toggle the "Lernen" action open/closed.
+  // Resting position so the pan gesture is relative to it. `openRef` mirrors
+  // whether the row is currently open so the Pressable tap handler can tell
+  // a real tap from "tap to close".
   const offset = useRef(0);
+  const openRef = useRef(false);
 
   function animateTo(to: number) {
     offset.current = to;
-    Animated.spring(translateX, {
+    openRef.current = to !== 0;
+    Animated.timing(translateX, {
       toValue: to,
+      duration: 160,
       useNativeDriver: true,
-      bounciness: 0,
-      speed: 18,
     }).start();
   }
 
   const pan = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > Math.abs(g.dy) * 1.5 && Math.abs(g.dx) > 8,
+        Math.abs(g.dx) > 4 && Math.abs(g.dx) > Math.abs(g.dy),
+      onMoveShouldSetPanResponderCapture: (_, g) =>
+        Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderMove: (_, g) => {
         let next = offset.current + g.dx;
         // Clamp to the side that actually has an action; otherwise pin to 0.
@@ -48,8 +67,16 @@ export function SwipeRow({ children, onDelete, onLearn }: Props) {
         translateX.setValue(next);
       },
       onPanResponderRelease: (_, g) => {
-        const moved = g.dx;
-        const at = offset.current + moved;
+        // Treat a near-stationary gesture as a tap.
+        if (Math.abs(g.dx) < TAP_SLOP && Math.abs(g.dy) < TAP_SLOP) {
+          if (openRef.current) {
+            animateTo(0);
+          } else if (onTap) {
+            onTap();
+          }
+          return;
+        }
+        const at = offset.current + g.dx;
         if (onLearn && at > SNAP) {
           animateTo(REVEAL);
         } else if (onDelete && at < -SNAP) {
@@ -62,11 +89,13 @@ export function SwipeRow({ children, onDelete, onLearn }: Props) {
     })
   ).current;
 
-  function onBodyPress() {
-    if (offset.current !== 0) {
-      animateTo(0); // any tap while open just closes
-    } else if (onLearn) {
-      animateTo(REVEAL); // tap reveals the Lernen action
+  function onBodyPress(_e: GestureResponderEvent) {
+    // Fired for plain taps that never reached the PanResponder. If the row is
+    // open, close it; otherwise hand off to onTap.
+    if (openRef.current) {
+      animateTo(0);
+    } else if (onTap) {
+      onTap();
     }
   }
 
@@ -80,7 +109,7 @@ export function SwipeRow({ children, onDelete, onLearn }: Props) {
             onLearn();
           }}
         >
-          <Text style={styles.learnText}>Lernen</Text>
+          <Text style={styles.learnText}>{learnLabel}</Text>
         </Pressable>
       )}
       {onDelete && (
@@ -91,7 +120,7 @@ export function SwipeRow({ children, onDelete, onLearn }: Props) {
             onDelete();
           }}
         >
-          <Text style={styles.deleteText}>Löschen</Text>
+          <Text style={styles.deleteText}>{deleteLabel}</Text>
         </Pressable>
       )}
       <Animated.View

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   SafeAreaView,
@@ -27,14 +28,16 @@ import { DialogScreen } from './src/screens/DialogScreen';
 import { VocabScreen } from './src/screens/VocabScreen';
 import { PhraseScreen } from './src/screens/PhraseScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { I18nProvider } from './src/i18n/I18nContext';
+import { makeT, resolveUiLang } from './src/i18n';
 
 type Tab = 'dialog' | 'vocab' | 'phrases' | 'settings';
 
-const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'dialog', label: 'Dialog', icon: 'chatbubble-ellipses-outline' },
-  { key: 'vocab', label: 'Vokabular', icon: 'book-outline' },
-  { key: 'phrases', label: 'Phrasen', icon: 'bookmark-outline' },
-  { key: 'settings', label: 'Settings', icon: 'settings-outline' },
+const TABS: { key: Tab; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'dialog', icon: 'chatbubble-ellipses-outline' },
+  { key: 'vocab', icon: 'book-outline' },
+  { key: 'phrases', icon: 'bookmark-outline' },
+  { key: 'settings', icon: 'settings-outline' },
 ];
 
 export default function App() {
@@ -72,6 +75,32 @@ export default function App() {
   function setShowPinyin(value: boolean) {
     if (!settings) return;
     handleSaveSettings({ ...settings, showPinyin: value });
+  }
+
+  function setPro(value: boolean) {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, isPro: value });
+  }
+
+  function setUiLanguage(code: string) {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, uiLanguage: code });
+  }
+
+  function purchasePro() {
+    // Stub — real in-app purchase wiring comes later.
+    const t = makeT(resolveUiLang(settings?.uiLanguage ?? 'auto'));
+    setPro(true);
+    Alert.alert(t('alert.proTitle'), t('alert.purchaseSimulated'));
+  }
+
+  function restorePurchases() {
+    // Stub — real restore flow comes later.
+    const t = makeT(resolveUiLang(settings?.uiLanguage ?? 'auto'));
+    Alert.alert(
+      t('alert.restoreTitle'),
+      settings?.isPro ? t('alert.alreadyPro') : t('alert.noPurchases')
+    );
   }
 
   function addVocab(items: Omit<VocabItem, 'id' | 'createdAt'>[]) {
@@ -144,12 +173,16 @@ export default function App() {
     );
   }
 
+  const uiLang = resolveUiLang(settings.uiLanguage);
+  const t = makeT(uiLang);
+
   return (
+    <I18nProvider lang={uiLang}>
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={theme.colors.bg} />
       <View style={styles.header}>
         <Text style={[styles.logo, styles.logoWord]}>Parla</Text>
-        <Text style={styles.tagline}>Sprechen · Transkribieren · Lernen</Text>
+        <Text style={styles.tagline}>{t('app.tagline')}</Text>
       </View>
 
       <View style={styles.body}>
@@ -162,6 +195,7 @@ export default function App() {
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
             onSetShowPinyin={setShowPinyin}
+            onPurchasePro={purchasePro}
             tagSuggestions={recentTags(phrases)}
           />
         )}
@@ -180,27 +214,30 @@ export default function App() {
         {tab === 'settings' && (
           <SettingsScreen
             settings={settings}
-            onSave={handleSaveSettings}
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
+            setUiLanguage={setUiLanguage}
+            setPro={setPro}
+            purchasePro={purchasePro}
+            restorePurchases={restorePurchases}
           />
         )}
       </View>
 
       <View style={styles.tabBar}>
-        {TABS.map((t) => {
-          const active = t.key === tab;
+        {TABS.map((tb) => {
+          const active = tb.key === tab;
           return (
-            <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}>
+            <Pressable key={tb.key} style={styles.tab} onPress={() => setTab(tb.key)}>
               <Ionicons
-                name={t.icon}
+                name={tb.icon}
                 size={22}
                 color={active ? theme.colors.accent : theme.colors.textFaint}
               />
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                {t.label}
-                {t.key === 'vocab' && vocab.length > 0 ? `  ${vocab.length}` : ''}
-                {t.key === 'phrases' && phrases.length > 0 ? `  ${phrases.length}` : ''}
+                {t('tab.' + tb.key)}
+                {tb.key === 'vocab' && vocab.length > 0 ? `  ${vocab.length}` : ''}
+                {tb.key === 'phrases' && phrases.length > 0 ? `  ${phrases.length}` : ''}
               </Text>
               {active && <View style={styles.tabDot} />}
             </Pressable>
@@ -208,6 +245,7 @@ export default function App() {
         })}
       </View>
     </SafeAreaView>
+    </I18nProvider>
   );
 }
 

@@ -28,11 +28,19 @@ export type Settings = {
   inputLanguage: string; // what the learner speaks (Whisper transcription)
   goalLanguage: string; // the language being learned (Parla speaks/teaches)
   showPinyin: boolean; // show Pinyin/Romaji line for Asian goal languages
+  isPro: boolean; // Parla Pro — removes the free-tier rate limit
+  uiLanguage: string; // app UI language: a UiLang code or 'auto' (device locale)
 };
 
 const VOCAB_KEY = 'parla.vocab';
 const PHRASE_KEY = 'parla.phrases';
 const SETTINGS_KEY = 'parla.settings';
+const USAGE_KEY = 'parla.usage';
+
+const HOUR_MS = 3_600_000;
+
+// Free tier: number of conversations (AI replies) allowed per rolling hour.
+export const FREE_PER_HOUR = 5;
 
 // Defaults pulled from .env (EXPO_PUBLIC_*). Overridable in the Settings screen.
 const envAnthropic = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
@@ -98,12 +106,17 @@ export async function loadSettings(): Promise<Settings> {
   const raw = await AsyncStorage.getItem(SETTINGS_KEY);
   const stored: Partial<Settings> & { language?: string } = raw ? safeParse(raw) : {};
   return {
-    anthropicKey: stored.anthropicKey || (isPlaceholder(envAnthropic) ? '' : envAnthropic),
-    openaiKey: stored.openaiKey || (isPlaceholder(envOpenai) ? '' : envOpenai),
+    // Keys are injected from .env.dev (EXPO_PUBLIC_*) at build time and are the
+    // source of truth now (no Settings UI to set them). Only fall back to a
+    // previously-stored key if the env value is missing/placeholder.
+    anthropicKey: !isPlaceholder(envAnthropic) ? envAnthropic : stored.anthropicKey || '',
+    openaiKey: !isPlaceholder(envOpenai) ? envOpenai : stored.openaiKey || '',
     inputLanguage: stored.inputLanguage || 'de',
     // migrate the old single `language` field → goal language
     goalLanguage: stored.goalLanguage || stored.language || 'zh',
     showPinyin: stored.showPinyin ?? true,
+    isPro: stored.isPro ?? false,
+    uiLanguage: stored.uiLanguage || 'auto',
   };
 }
 
@@ -117,4 +130,48 @@ function safeParse(raw: string): Partial<Settings> {
   } catch {
     return {};
   }
+}
+
+// ── Usage tracking (free-tier rate limit) ──────────────────────────────────
+// Stored as an array of epoch-ms timestamps, one per conversation.
+
+async function loadUsage(): Promise<number[]> {
+  const raw = await AsyncStorage.getItem(USAGE_KEY);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? (arr.filter((n) => typeof n === 'number') as number[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveUsage(stamps: number[]): Promise<void> {
+  await AsyncStorage.setItem(USAGE_KEY, JSON.stringify(stamps));
+}
+
+// Record one usage event now, pruning entries older than one hour.
+export async function recordUsage(): Promise<void> {
+  const cutoff = Date.now() - HOUR_MS;
+  const stamps = (await loadUsage()).filter((t) => t >= cutoff);
+  stamps.push(Date.now());
+  await saveUsage(stamps);
+}
+
+// Count usage events within the last rolling hour (prunes + persists).
+export async function usageInLastHour(): Promise<number> {
+  const cutoff = Date.now() - HOUR_MS;
+  const stamps = (await loadUsage()).filter((t) => t >= cutoff);
+  await saveUsage(stamps);
+  return stamps.length;
+}
+
+// The dev environment (.env.dev sets EXPO_PUBLIC_ENV=dev) and Debug builds are
+// exempt from the paywall — even in a standalone Release build. Only a real
+// production build (no dev flag) gates non-Pro users.
+const IS_DEV_ENV =
+  (process.env.EXPO_PUBLIC_ENV ?? '').toLowerCase() === 'dev' || __DEV__;
+
+export function isPaywallActive(isPro: boolean): boolean {
+  return !IS_DEV_ENV && !isPro;
 }

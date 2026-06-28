@@ -14,6 +14,8 @@ import { theme } from '../theme';
 import { Settings, VocabItem } from '../storage';
 import { findLanguage } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
+import { useT } from '../i18n/I18nContext';
+import { TFn } from '../i18n';
 
 type Props = {
   vocab: VocabItem[];
@@ -23,6 +25,7 @@ type Props = {
 };
 
 export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
+  const t = useT();
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
   const [adding, setAdding] = useState(false);
@@ -51,12 +54,12 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
             <Text style={styles.langBadgeText}>{findLanguage(settings.goalLanguage).nativeName}</Text>
           </View>
           <Text style={styles.count}>
-            {shown.length} {shown.length === 1 ? 'Vokabel' : 'Vokabeln'}
+            {shown.length} {shown.length === 1 ? t('vocab.one') : t('vocab.many')}
           </Text>
         </View>
         <Pressable style={styles.addToggle} onPress={() => setAdding((v) => !v)}>
           <Ionicons name={adding ? 'close' : 'add'} size={15} color="#fff" />
-          <Text style={styles.addToggleText}>{adding ? 'Abbrechen' : 'Neu'}</Text>
+          <Text style={styles.addToggleText}>{adding ? t('common.cancel') : t('common.new')}</Text>
         </Pressable>
       </View>
 
@@ -64,7 +67,9 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
         <View style={styles.addCard}>
           <TextInput
             style={styles.input}
-            placeholder={`Wort auf ${findLanguage(settings.goalLanguage).nativeName}`}
+            placeholder={t('vocab.wordPlaceholder', {
+              lang: findLanguage(settings.goalLanguage).nativeName,
+            })}
             placeholderTextColor={theme.colors.textFaint}
             value={term}
             onChangeText={setTerm}
@@ -72,7 +77,9 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
           />
           <TextInput
             style={styles.input}
-            placeholder={`Übersetzung auf ${findLanguage(settings.inputLanguage).nativeName}`}
+            placeholder={t('vocab.translationPlaceholder', {
+              lang: findLanguage(settings.inputLanguage).nativeName,
+            })}
             placeholderTextColor={theme.colors.textFaint}
             value={translation}
             onChangeText={setTranslation}
@@ -80,7 +87,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
             returnKeyType="done"
           />
           <Pressable style={styles.saveBtn} onPress={submit}>
-            <Text style={styles.saveBtnText}>Speichern</Text>
+            <Text style={styles.saveBtnText}>{t('common.save')}</Text>
           </Pressable>
         </View>
       )}
@@ -89,8 +96,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
         <View style={styles.empty}>
           <Ionicons name="book-outline" size={52} color={theme.colors.textFaint} />
           <Text style={styles.emptyText}>
-            Noch keine Vokabeln auf {findLanguage(settings.goalLanguage).nativeName}. Speichere Wörter
-            aus dem Dialog oder füge sie manuell hinzu.
+            {t('vocab.emptyText', { lang: findLanguage(settings.goalLanguage).nativeName })}
           </Text>
         </View>
       ) : (
@@ -98,16 +104,16 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
           data={shown}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => <Row item={item} onRemove={onRemove} />}
+          renderItem={({ item }) => <Row item={item} onRemove={onRemove} t={t} />}
         />
       )}
     </KeyboardAvoidingView>
   );
 }
 
-function Row({ item, onRemove }: { item: VocabItem; onRemove: (id: string) => void }) {
+function Row({ item, onRemove, t }: { item: VocabItem; onRemove: (id: string) => void; t: TFn }) {
   return (
-    <SwipeRow onDelete={() => onRemove(item.id)}>
+    <SwipeRow onDelete={() => onRemove(item.id)} deleteLabel={t('swipe.delete')}>
       <View style={styles.row}>
         <View style={styles.rowMain}>
           <Text style={styles.term}>{item.term}</Text>

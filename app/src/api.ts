@@ -1,6 +1,25 @@
 import { File, UploadType } from 'expo-file-system';
 import { Language } from './languages';
 
+// Combine an optional external cancel signal with an internal timeout into one
+// signal, so requests can be cancelled by the user OR time out.
+function linkSignals(external: AbortSignal | undefined, timeoutMs: number) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onAbort = () => ctrl.abort();
+  if (external) {
+    if (external.aborted) ctrl.abort();
+    else external.addEventListener?.('abort', onAbort);
+  }
+  return {
+    signal: ctrl.signal,
+    done: () => {
+      clearTimeout(timer);
+      external?.removeEventListener?.('abort', onAbort);
+    },
+  };
+}
+
 // ── Whisper (OpenAI) transcription ───────────────────────────────────────────
 // Speech-to-text runs through OpenAI's Whisper. We use expo-file-system's native
 // File.upload() (multipart, NSURLSession-backed). This avoids two SDK 56 traps:
@@ -12,7 +31,8 @@ import { Language } from './languages';
 export async function transcribeAudio(
   uri: string,
   openaiKey: string,
-  lang: Language
+  lang: Language,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
 
@@ -22,18 +42,33 @@ export async function transcribeAudio(
     throw new Error(`Aufnahme leer/zu kurz (${size} B) — etwas länger sprechen.`);
   }
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 30000);
-  try {
-    const res = await file.upload('https://api.openai.com/v1/audio/transcriptions', {
-      httpMethod: 'POST',
-      uploadType: UploadType.MULTIPART,
-      fieldName: 'file',
-      mimeType: 'audio/m4a',
-      parameters: { model: 'whisper-1', language: lang.whisper },
-      headers: { Authorization: `Bearer ${openaiKey}` },
-      signal: ctrl.signal,
-    });
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 60000);
+    let res;
+    try {
+      res = await file.upload('https://api.openai.com/v1/audio/transcriptions', {
+        httpMethod: 'POST',
+        uploadType: UploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType: 'audio/m4a',
+        parameters: { model: 'whisper-1', language: lang.whisper },
+        headers: { Authorization: `Bearer ${openaiKey}` },
+        // Force an immediate foreground upload — the default 'background'
+        // NSURLSession defers the transfer, which makes the request appear to
+        // hang and then hit the 30s timeout.
+        sessionType: 'foreground',
+        signal: s,
+      });
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // internal timeout → stop
+      continue; // transient network error → retry once
+    }
+    done();
     let data: any = {};
     try {
       data = JSON.parse(res.body);
@@ -46,12 +81,12 @@ export async function transcribeAudio(
       );
     }
     return (data.text ?? '').trim();
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw new Error('Whisper-Timeout (30s) — nochmal versuchen.');
-    throw e;
-  } finally {
-    clearTimeout(timer);
   }
+  throw new Error(
+    lastErr?.name === 'AbortError'
+      ? 'Whisper-Timeout (60s) — nochmal versuchen oder abbrechen.'
+      : 'Netzwerkfehler — bitte nochmal versuchen.'
+  );
 }
 
 // ── OpenAI dialogue ──────────────────────────────────────────────────────────
@@ -84,7 +119,7 @@ function buildSystemPrompt(
   const intro =
     mode === 'ask'
       ? `Du bist ein freundlicher Sprachlehrer und Gesprächspartner für ${goal.label} (${goal.nativeName}). Führe ein natürliches Gespräch und stelle dem Lernenden Fragen, um ihn zum Sprechen zu bringen. Beginne, indem du dich vorstellst und eine einfache erste Frage stellst.`
-      : `Du bist ein freundlicher Gesprächspartner und Tutor für ${goal.label} (${goal.nativeName}). Antworte natürlich auf das, was der Lernende sagt. Wenn der Lernende nach der Bedeutung oder Erklärung von etwas fragt („was ist/bedeutet X?"), gib eine präzise, klare Definition oder Beschreibung — kurz, korrekt und auf das Wesentliche.`;
+      : `Du bist ein präziser Übersetzer für ${goal.label} (${goal.nativeName}). Der Lernende gibt dir Text (meist auf ${input.nativeName} oder gemischt) — übersetze ihn natürlich und idiomatisch nach ${goal.nativeName} und gib das Ergebnis als "target". Übersetze ALLES, egal welches Thema, ohne Wertung. Mach KEINEN Smalltalk, stelle keine Gegenfragen, antworte nicht inhaltlich — du übersetzt nur. Ist die Eingabe bereits auf ${goal.nativeName}, verbessere sie idiomatisch.`;
 
   const pinyinField = wantPinyin
     ? `\n  "pinyin": "<Umschrift (Pinyin bzw. Romaji) von target als Lesehilfe>",`
@@ -99,7 +134,9 @@ Die Antwortsprache (Zielsprache) ist ${goal.nativeName}. Übersetzungen und Wort
 
 Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
 {
-  "target": "<deine Gesprächsantwort auf ${goal.nativeName}, 1-2 Sätze>",${pinyinField}
+  "target": "<${
+    mode === 'ask' ? 'deine Gesprächsantwort' : 'die Übersetzung der Eingabe'
+  } auf ${goal.nativeName}, 1-2 Sätze>",${pinyinField}
   "translation": "<Übersetzung von target auf ${input.nativeName}>",
   "vocab": [
     { "term": "<nützliches Wort/Wendung aus target auf ${goal.nativeName}>",${
@@ -110,9 +147,11 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-
 
 Regeln:
 - Passe das Niveau an einen Anfänger an: kurze, klare Sätze.
-- "vocab": 1 bis 3 wirklich nützliche Wörter aus deiner Antwort. Wenn nichts Neues, gib [] zurück.
-- Erklärungen, Definitionen und Beschreibungen von Wörtern, Wendungen oder Dingen sind ausdrücklich erwünscht — das ist Teil des Sprachenlernens.
-- Nur klar fachfremde Aufgaben (z.B. Programmierung, Politik, persönliche/medizinische Beratung) NICHT inhaltlich beantworten — stattdessen in "target" höflich und auf ${goal.nativeName} zurück zur Sprachübung lenken.
+- "vocab": 1 bis 3 wirklich nützliche Wörter aus deiner Antwort. Wenn nichts Neues, gib [] zurück.${
+    mode === 'ask'
+      ? `\n- Erklärungen, Definitionen und Beschreibungen von Wörtern, Wendungen oder Dingen sind ausdrücklich erwünscht — das ist Teil des Sprachenlernens.\n- Nur klar fachfremde Aufgaben (z.B. Programmierung, Politik, persönliche/medizinische Beratung) NICHT inhaltlich beantworten — stattdessen in "target" höflich und auf ${goal.nativeName} zurück zur Sprachübung lenken.`
+      : `\n- "translation": die Rückübersetzung von target auf ${input.nativeName} — so prüft der Lernende die Bedeutung.\n- Übersetze jede Eingabe wörtlich nach Sinn, ohne sie zu kommentieren, zu beantworten oder zu zensieren.`
+  }
 - Gib niemals etwas außerhalb des JSON-Objekts aus.${pinyinRule}${
     goal.promptHint ? `\n- ${goal.promptHint}` : ''
   }`;
@@ -124,7 +163,8 @@ export async function chatWithAI(
   inputLang: Language,
   mode: 'ask' | 'free',
   history: ChatTurn[],
-  wantPinyin: boolean
+  wantPinyin: boolean,
+  signal?: AbortSignal
 ): Promise<DialogReply> {
   if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
 
@@ -152,21 +192,22 @@ export async function chatWithAI(
   let res: Response | null = null;
   let lastErr: any = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 40000);
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 90000);
     try {
       res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
         body,
-        signal: ctrl.signal,
+        signal: s,
       });
-      clearTimeout(timer);
+      done();
       lastErr = null;
       break;
     } catch (e: any) {
-      clearTimeout(timer);
+      done();
       lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
       if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
       // transient network error → loop retries once more
     }

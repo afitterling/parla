@@ -1,46 +1,40 @@
-import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Settings } from '../storage';
 import { LANGUAGES } from '../languages';
+import { useT } from '../i18n/I18nContext';
+import { UI_LANGS } from '../i18n';
 
 type Props = {
   settings: Settings;
-  onSave: (s: Settings) => void;
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
+  setUiLanguage: (code: string) => void;
+  setPro: (value: boolean) => void;
+  purchasePro: () => void;
+  restorePurchases: () => void;
 };
 
 export function SettingsScreen({
   settings,
-  onSave,
   onChangeInputLanguage,
   onChangeGoalLanguage,
+  setUiLanguage,
+  setPro,
+  purchasePro,
+  restorePurchases,
 }: Props) {
-  const [anthropicKey, setAnthropicKey] = useState(settings.anthropicKey);
-  const [openaiKey, setOpenaiKey] = useState(settings.openaiKey);
-  const [savedFlash, setSavedFlash] = useState(false);
-
-  function save() {
-    onSave({
-      ...settings,
-      anthropicKey: anthropicKey.trim(),
-      openaiKey: openaiKey.trim(),
-    });
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1500);
-  }
-
+  const t = useT();
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -48,62 +42,85 @@ export function SettingsScreen({
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.sectionLabel}>ICH SPRECHE (INPUT)</Text>
+        <Text style={styles.sectionLabel}>{t('settings.appLanguage').toUpperCase()}</Text>
+        <View style={styles.langGrid}>
+          <Pressable
+            style={[styles.langTile, settings.uiLanguage === 'auto' && styles.langTileActive]}
+            onPress={() => setUiLanguage('auto')}
+          >
+            <Ionicons
+              name="globe-outline"
+              size={22}
+              color={settings.uiLanguage === 'auto' ? theme.colors.accent : theme.colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.langName,
+                settings.uiLanguage === 'auto' && styles.langNameActive,
+              ]}
+            >
+              {t('settings.auto')}
+            </Text>
+          </Pressable>
+          {UI_LANGS.map((l) => {
+            const isActive = l.code === settings.uiLanguage;
+            return (
+              <Pressable
+                key={l.code}
+                style={[styles.langTile, isActive && styles.langTileActive]}
+                onPress={() => setUiLanguage(l.code)}
+              >
+                <Ionicons
+                  name="language-outline"
+                  size={22}
+                  color={isActive ? theme.colors.accent : theme.colors.textMuted}
+                />
+                <Text style={[styles.langName, isActive && styles.langNameActive]}>{l.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionLabel}>{t('settings.iSpeakInput')}</Text>
         <LangGrid
           active={settings.inputLanguage}
           icon="mic-outline"
           onPick={onChangeInputLanguage}
         />
 
-        <Text style={styles.sectionLabel}>ICH LERNE (ZIEL)</Text>
+        <Text style={styles.sectionLabel}>{t('settings.iLearnGoal')}</Text>
         <LangGrid
           active={settings.goalLanguage}
           icon="school-outline"
           onPick={onChangeGoalLanguage}
         />
 
-        <Text style={styles.sectionLabel}>API-KEYS</Text>
+        <Text style={styles.sectionLabel}>{t('settings.parlaPro')}</Text>
         <View style={styles.card}>
-          <Text style={styles.keyLabel}>OpenAI — Transkription + Dialog</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="sk-…"
-            placeholderTextColor={theme.colors.textFaint}
-            value={openaiKey}
-            onChangeText={setOpenaiKey}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-          />
-          <Text style={styles.hint}>
-            platform.openai.com → API Keys · betreibt Whisper (Sprache) + den Dialog (gpt-4o-mini)
+          <Text style={[styles.status, settings.isPro ? styles.statusActive : styles.statusFree]}>
+            {settings.isPro ? t('settings.proActive') : t('settings.proFree')}
           </Text>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>{t('settings.proTest')}</Text>
+            <Switch
+              value={settings.isPro}
+              onValueChange={setPro}
+              trackColor={{ false: theme.colors.cardBorder, true: theme.colors.accent }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          <Pressable style={styles.primaryBtn} onPress={purchasePro}>
+            <Text style={styles.primaryBtnText}>{t('settings.buyPro')}</Text>
+          </Pressable>
+
+          <Pressable style={styles.textBtn} onPress={restorePurchases}>
+            <Text style={styles.textBtnText}>{t('settings.restorePurchases')}</Text>
+          </Pressable>
+
+          <Text style={styles.hint}>{t('settings.proHint')}</Text>
         </View>
-
-        <View style={styles.card}>
-          <Text style={styles.keyLabel}>Claude (Anthropic) — optional, aktuell nicht genutzt</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="sk-ant-…"
-            placeholderTextColor={theme.colors.textFaint}
-            value={anthropicKey}
-            onChangeText={setAnthropicKey}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-          />
-          <Text style={styles.hint}>console.anthropic.com → API Keys</Text>
-        </View>
-
-        <Pressable style={styles.saveBtn} onPress={save}>
-          {savedFlash && <Ionicons name="checkmark" size={16} color="#fff" />}
-          <Text style={styles.saveBtnText}>{savedFlash ? 'Gespeichert' : 'Speichern'}</Text>
-        </Pressable>
-
-        <Text style={styles.note}>
-          Keys werden nur lokal auf dem Gerät gespeichert. Standardwerte kommen aus der .env-Datei
-          (EXPO_PUBLIC_…). Hier eingetragene Keys haben Vorrang.
-        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -133,8 +150,9 @@ function LangGrid({
               size={22}
               color={isActive ? theme.colors.accent : theme.colors.textMuted}
             />
-            <Text style={[styles.langName, isActive && styles.langNameActive]}>{l.label}</Text>
-            <Text style={styles.langNative}>{l.nativeName}</Text>
+            <Text style={[styles.langName, isActive && styles.langNameActive]}>
+              {l.nativeName}
+            </Text>
           </Pressable>
         );
       })}
@@ -177,27 +195,26 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
-  keyLabel: { color: theme.colors.text, fontSize: 14, fontWeight: '700', marginBottom: 8 },
-  input: {
-    backgroundColor: theme.colors.bgElevated,
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
-    color: theme.colors.text,
-    fontSize: 14,
-  },
-  hint: { color: theme.colors.textFaint, fontSize: 12, marginTop: 6 },
+  hint: { color: theme.colors.textFaint, fontSize: 12, marginTop: 10 },
 
-  saveBtn: {
+  status: { fontSize: 16, fontWeight: '800' },
+  statusActive: { color: theme.colors.success },
+  statusFree: { color: theme.colors.textMuted },
+  switchRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  switchLabel: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
+  primaryBtn: {
     backgroundColor: theme.colors.accent,
     borderRadius: theme.radius.pill,
     paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 4,
   },
-  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  note: { color: theme.colors.textFaint, fontSize: 12, lineHeight: 18, marginTop: 16 },
+  primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  textBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 2 },
+  textBtnText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '700' },
 });

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   SectionList,
@@ -15,6 +17,7 @@ import { theme } from '../theme';
 import { PhraseItem, Settings, recentTags } from '../storage';
 import { findLanguage } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
+import { useT } from '../i18n/I18nContext';
 
 type Props = {
   phrases: PhraseItem[];
@@ -31,6 +34,7 @@ export function PhraseScreen({
   onUpdate,
   settings,
 }: Props & { settings: Settings }) {
+  const t = useT();
   const [view, setView] = useState<View2>('list');
   const [learnPhrase, setLearnPhrase] = useState<PhraseItem | null>(null);
 
@@ -55,20 +59,20 @@ export function PhraseScreen({
           <Text style={styles.langBadgeText}>{findLanguage(settings.goalLanguage).nativeName}</Text>
         </View>
         <Text style={styles.topCount}>
-          {shown.length} {shown.length === 1 ? 'Phrase' : 'Phrasen'}
+          {shown.length} {shown.length === 1 ? t('phrase.one') : t('phrase.many')}
         </Text>
       </View>
 
       <View style={styles.segment}>
         <Seg
           icon="list-outline"
-          label="Liste"
+          label={t('phrase.list')}
           active={view === 'list'}
           onPress={() => setView('list')}
         />
         <Seg
           icon="school-outline"
-          label="Training"
+          label={t('phrase.training')}
           active={view === 'train'}
           onPress={() => {
             setLearnPhrase(null);
@@ -106,6 +110,7 @@ function ListView({
   tagSuggestions,
   onLearn,
 }: Props & { onLearn: (item: PhraseItem) => void }) {
+  const t = useT();
   const [search, setSearch] = useState('');
   const [ordering, setOrdering] = useState<'latest' | 'tag'>('latest');
   const [filterTag, setFilterTag] = useState<string | null>(null);
@@ -144,7 +149,7 @@ function ListView({
       const untagged = filtered
         .filter((p) => p.tags.length === 0)
         .sort((a, b) => b.createdAt - a.createdAt);
-      if (untagged.length) secs.push({ title: 'Ohne Tag', data: untagged });
+      if (untagged.length) secs.push({ title: t('phrase.untagged'), data: untagged });
     }
     return secs;
   }, [filtered, filterTag]);
@@ -153,9 +158,7 @@ function ListView({
     return (
       <View style={styles.empty}>
         <Ionicons name="bookmark-outline" size={52} color={theme.colors.textFaint} />
-        <Text style={styles.emptyText}>
-          Noch keine Phrasen. Tippe im Dialog bei einer Parla-Antwort auf „Phrase merken".
-        </Text>
+        <Text style={styles.emptyText}>{t('phrase.emptyText')}</Text>
       </View>
     );
   }
@@ -165,7 +168,7 @@ function ListView({
       <View style={styles.controls}>
         <TextInput
           style={styles.search}
-          placeholder="Phrasen durchsuchen …"
+          placeholder={t('phrase.searchPlaceholder')}
           placeholderTextColor={theme.colors.textFaint}
           value={search}
           onChangeText={setSearch}
@@ -176,7 +179,7 @@ function ListView({
             onPress={() => setOrdering('latest')}
           >
             <Text style={[styles.orderText, ordering === 'latest' && styles.orderTextActive]}>
-              Neueste
+              {t('phrase.latest')}
             </Text>
           </Pressable>
           <Pressable
@@ -184,7 +187,7 @@ function ListView({
             onPress={() => setOrdering('tag')}
           >
             <Text style={[styles.orderText, ordering === 'tag' && styles.orderTextActive]}>
-              Nach Tag
+              {t('phrase.byTag')}
             </Text>
           </Pressable>
         </View>
@@ -207,7 +210,7 @@ function ListView({
               onLearn={onLearn}
             />
           )}
-          ListEmptyComponent={<Text style={styles.noMatch}>Keine Treffer.</Text>}
+          ListEmptyComponent={<Text style={styles.noMatch}>{t('phrase.noMatch')}</Text>}
         />
       ) : (
         <SectionList
@@ -230,7 +233,7 @@ function ListView({
               onLearn={onLearn}
             />
           )}
-          ListEmptyComponent={<Text style={styles.noMatch}>Keine Treffer.</Text>}
+          ListEmptyComponent={<Text style={styles.noMatch}>{t('phrase.noMatch')}</Text>}
         />
       )}
     </View>
@@ -250,16 +253,29 @@ function PhraseRow({
   tagSuggestions: string[];
   onLearn: (item: PhraseItem) => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const t = useT();
+  const [tagModalOpen, setTagModalOpen] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [draft, setDraft] = useState('');
 
   function toggleTag(tag: string) {
-    const has = item.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
-    const next = has
-      ? item.tags.filter((t) => t.toLowerCase() !== tag.toLowerCase())
-      : [...item.tags, tag];
-    onUpdate(item.id, { tags: next });
+    const has = item.tags.some((tg) => tg.toLowerCase() === tag.toLowerCase());
+    if (has) {
+      // Confirm before removing an already-assigned tag.
+      Alert.alert(t('tagModal.removeTitle'), t('tagModal.removeMsg', { tag }), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('tagModal.remove'),
+          style: 'destructive',
+          onPress: () =>
+            onUpdate(item.id, {
+              tags: item.tags.filter((tg) => tg.toLowerCase() !== tag.toLowerCase()),
+            }),
+        },
+      ]);
+    } else {
+      onUpdate(item.id, { tags: [...item.tags, tag] });
+    }
   }
 
   function addTag() {
@@ -270,83 +286,102 @@ function PhraseRow({
     onUpdate(item.id, { tags: [...item.tags, t] });
   }
 
+  function closeModal() {
+    addTag(); // commit any pending draft
+    setTagModalOpen(false);
+  }
+
   const chipTags = [...item.tags];
   for (const s of tagSuggestions) {
     if (!chipTags.some((t) => t.toLowerCase() === s.toLowerCase())) chipTags.push(s);
   }
 
   return (
-    <SwipeRow onDelete={() => onRemove(item.id)} onLearn={() => onLearn(item)}>
-    <View style={styles.row}>
-      <Text style={styles.target}>{item.target}</Text>
-      {!!item.pinyin && <Text style={styles.pinyin}>{item.pinyin}</Text>}
-      {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
+    <SwipeRow
+      onDelete={() => onRemove(item.id)}
+      onLearn={() => onLearn(item)}
+      onTap={() => setTagModalOpen(true)}
+      deleteLabel={t('swipe.delete')}
+      learnLabel={t('swipe.learn')}
+    >
+      <View style={styles.row}>
+        <Text style={styles.target}>{item.target}</Text>
+        {!!item.pinyin && <Text style={styles.pinyin}>{item.pinyin}</Text>}
+        {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
 
-      {item.tags.length > 0 && !editing && (
-        <View style={styles.tagDisplayRow}>
-          {item.tags.map((t) => (
-            <View key={t} style={styles.tagBadge}>
-              <Text style={styles.tagBadgeText}>{t}</Text>
-            </View>
-          ))}
-        </View>
-      )}
+        {item.tags.length > 0 && (
+          <View style={styles.tagDisplayRow}>
+            {item.tags.map((t) => (
+              <View key={t} style={styles.tagBadge}>
+                <Text style={styles.tagBadgeText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
-      {editing && (
-        <View style={styles.tagEditRow}>
-          {chipTags.map((tag) => {
-            const on = item.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
-            return (
-              <Pressable
-                key={tag}
-                style={[styles.tagChip, on && styles.tagChipOn]}
-                onPress={() => toggleTag(tag)}
-              >
-                {on && <Ionicons name="checkmark" size={12} color={theme.colors.text} />}
-                <Text style={[styles.tagChipText, on && styles.tagChipTextOn]}>{tag}</Text>
-              </Pressable>
-            );
-          })}
-          {showInput ? (
-            <TextInput
-              style={styles.tagInput}
-              placeholder="neuer Tag"
-              placeholderTextColor={theme.colors.textFaint}
-              value={draft}
-              onChangeText={setDraft}
-              onSubmitEditing={addTag}
-              onBlur={addTag}
-              autoFocus
-              returnKeyType="done"
-            />
-          ) : (
-            <Pressable
-              style={[styles.tagChip, styles.tagChipAdd]}
-              onPress={() => setShowInput(true)}
-            >
-              <Ionicons name="add" size={13} color={theme.colors.accent} />
-              <Text style={styles.tagChipAddText}>Tag</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
-
-      <View style={styles.rowActions}>
-        <Pressable onPress={() => setEditing((v) => !v)} hitSlop={8} style={styles.rowActionBtn}>
-          <Ionicons
-            name={editing ? 'checkmark' : 'pricetag-outline'}
-            size={14}
-            color={theme.colors.textMuted}
-          />
-          <Text style={styles.rowAction}>{editing ? 'Fertig' : 'Tags'}</Text>
-        </Pressable>
         {item.reviews > 0 && (
-          <Text style={styles.stat}>
-            {item.known}/{item.reviews} gewusst
+          <Text style={[styles.stat, styles.statRow]}>
+            {t('phrase.known', { known: item.known, reviews: item.reviews })}
           </Text>
         )}
+
+        <Modal
+          visible={tagModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={closeModal}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={closeModal}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
+              <Text style={styles.modalTitle}>{t('tagModal.title')}</Text>
+              <Text style={styles.modalPhrase} numberOfLines={2}>
+                {item.target}
+              </Text>
+
+              <View style={styles.tagEditRow}>
+                {chipTags.map((tag) => {
+                  const on = item.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+                  return (
+                    <Pressable
+                      key={tag}
+                      style={[styles.tagChip, on && styles.tagChipOn]}
+                      onPress={() => toggleTag(tag)}
+                    >
+                      {on && <Ionicons name="checkmark" size={12} color={theme.colors.text} />}
+                      <Text style={[styles.tagChipText, on && styles.tagChipTextOn]}>{tag}</Text>
+                    </Pressable>
+                  );
+                })}
+                {showInput ? (
+                  <TextInput
+                    style={styles.tagInput}
+                    placeholder={t('tagModal.newTag')}
+                    placeholderTextColor={theme.colors.textFaint}
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSubmitEditing={addTag}
+                    onBlur={addTag}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                ) : (
+                  <Pressable
+                    style={[styles.tagChip, styles.tagChipAdd]}
+                    onPress={() => setShowInput(true)}
+                  >
+                    <Ionicons name="add" size={13} color={theme.colors.accent} />
+                    <Text style={styles.tagChipAddText}>{t('phrase.tag')}</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <Pressable style={styles.modalCloseBtn} onPress={closeModal}>
+                <Text style={styles.modalCloseText}>{t('tagModal.close')}</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </View>
-    </View>
     </SwipeRow>
   );
 }
@@ -365,6 +400,7 @@ function TrainView({
   learnPhrase: PhraseItem | null;
   onClearLearn: () => void;
 }) {
+  const t = useT();
   // Show the original target-language phrase first by default.
   const [direction, setDirection] = useState<'de2t' | 't2de'>('t2de');
   const [sessionTag, setSessionTag] = useState<string | null>(null);
@@ -419,14 +455,14 @@ function TrainView({
   if (queue === null) {
     return (
       <View style={{ flex: 1 }}>
-        <Text style={styles.trainHint}>Richtung</Text>
+        <Text style={styles.trainHint}>{t('train.direction')}</Text>
         <View style={[styles.orderToggle, styles.trainBlock]}>
           <Pressable
             style={[styles.orderBtn, direction === 'de2t' && styles.orderBtnActive]}
             onPress={() => setDirection('de2t')}
           >
             <Text style={[styles.orderText, direction === 'de2t' && styles.orderTextActive]}>
-              DE → Zielsprache
+              {t('train.de2t')}
             </Text>
           </Pressable>
           <Pressable
@@ -434,28 +470,30 @@ function TrainView({
             onPress={() => setDirection('t2de')}
           >
             <Text style={[styles.orderText, direction === 't2de' && styles.orderTextActive]}>
-              Zielsprache → DE
+              {t('train.t2de')}
             </Text>
           </Pressable>
         </View>
 
-        <Text style={styles.trainHint}>Welche Phrasen?</Text>
+        <Text style={styles.trainHint}>{t('train.whichPhrases')}</Text>
         <TagFilterRow tags={tagSuggestions} value={sessionTag} onChange={setSessionTag} />
 
         <View style={styles.trainCenter}>
           <Text style={styles.poolCount}>
-            {pool.length} {pool.length === 1 ? 'Phrase' : 'Phrasen'}
-            {sessionTag ? ` mit „${sessionTag}"` : ''}
+            {pool.length} {pool.length === 1 ? t('phrase.one') : t('phrase.many')}
+            {sessionTag ? t('train.withTag', { tag: sessionTag }) : ''}
           </Text>
           <Pressable
             style={[styles.bigBtn, pool.length === 0 && styles.bigBtnDisabled]}
             disabled={pool.length === 0}
             onPress={start}
           >
-            <Text style={styles.bigBtnText}>Training starten</Text>
+            <Text style={styles.bigBtnText}>{t('train.start')}</Text>
           </Pressable>
           {pool.length === 0 && (
-            <Text style={styles.noMatch}>Keine Phrasen{sessionTag ? ' in diesem Tag' : ''}.</Text>
+            <Text style={styles.noMatch}>
+              {sessionTag ? t('train.noPhrasesInTag') : t('train.noPhrases')}
+            </Text>
           )}
         </View>
       </View>
@@ -467,12 +505,12 @@ function TrainView({
     return (
       <View style={styles.trainCenter}>
         <Ionicons name="trophy-outline" size={52} color={theme.colors.accent} />
-        <Text style={styles.doneTitle}>Durch! {total} Phrasen trainiert.</Text>
+        <Text style={styles.doneTitle}>{t('train.doneTitle', { total })}</Text>
         <Pressable style={styles.bigBtn} onPress={start}>
-          <Text style={styles.bigBtnText}>Nochmal trainieren</Text>
+          <Text style={styles.bigBtnText}>{t('train.again')}</Text>
         </Pressable>
         <Pressable style={styles.linkBtn} onPress={reset}>
-          <Text style={styles.linkBtnText}>Einstellungen ändern</Text>
+          <Text style={styles.linkBtnText}>{t('train.changeSettings')}</Text>
         </Pressable>
       </View>
     );
@@ -487,8 +525,8 @@ function TrainView({
 
   const front = direction === 'de2t' ? current.translation : current.target;
   const back = direction === 'de2t' ? current.target : current.translation;
-  const frontText = front || '(keine Übersetzung)';
-  const backText = back || '(keine Übersetzung)';
+  const frontText = front || t('train.noTranslation');
+  const backText = back || t('train.noTranslation');
   const done = total - queue.length;
 
   function known() {
@@ -510,7 +548,7 @@ function TrainView({
           {done}/{total}
         </Text>
         <Text style={styles.progressDir}>
-          {direction === 'de2t' ? 'DE → Zielsprache' : 'Zielsprache → DE'}
+          {direction === 'de2t' ? t('train.de2t') : t('train.t2de')}
         </Text>
         <Pressable onPress={reset} hitSlop={8}>
           <Ionicons name="close" size={20} color={theme.colors.textMuted} />
@@ -518,7 +556,9 @@ function TrainView({
       </View>
 
       <Pressable style={styles.card} onPress={() => !revealed && setRevealed(true)}>
-        <Text style={styles.cardSide}>{direction === 'de2t' ? 'DEUTSCH' : 'ZIELSPRACHE'}</Text>
+        <Text style={styles.cardSide}>
+          {direction === 'de2t' ? t('train.native') : t('train.targetLang')}
+        </Text>
         <Text style={styles.cardFront}>{frontText}</Text>
         {direction === 't2de' && !!current.pinyin && (
           <Text style={styles.cardPinyin}>{current.pinyin}</Text>
@@ -541,7 +581,7 @@ function TrainView({
             )}
           </>
         ) : (
-          <Text style={styles.cardTapHint}>Tippen zum Auflösen</Text>
+          <Text style={styles.cardTapHint}>{t('train.tapToReveal')}</Text>
         )}
       </Pressable>
 
@@ -549,16 +589,16 @@ function TrainView({
         <View style={styles.answerRow}>
           <Pressable style={[styles.answerBtn, styles.againBtn]} onPress={again}>
             <Ionicons name="refresh" size={17} color={theme.colors.textMuted} />
-            <Text style={styles.againText}>Nochmal</Text>
+            <Text style={styles.againText}>{t('train.againBtn')}</Text>
           </Pressable>
           <Pressable style={[styles.answerBtn, styles.knownBtn]} onPress={known}>
             <Ionicons name="checkmark" size={17} color="#04210f" />
-            <Text style={styles.knownText}>Gewusst</Text>
+            <Text style={styles.knownText}>{t('train.knownBtn')}</Text>
           </Pressable>
         </View>
       ) : (
         <Pressable style={styles.revealBtn} onPress={() => setRevealed(true)}>
-          <Text style={styles.revealText}>Auflösen</Text>
+          <Text style={styles.revealText}>{t('train.reveal')}</Text>
         </Pressable>
       )}
     </View>
@@ -575,6 +615,7 @@ function TagFilterRow({
   value: string | null;
   onChange: (v: string | null) => void;
 }) {
+  const t = useT();
   if (tags.length === 0) return null;
   return (
     <View style={styles.filterRow}>
@@ -582,7 +623,9 @@ function TagFilterRow({
         style={[styles.filterChip, value === null && styles.filterChipOn]}
         onPress={() => onChange(null)}
       >
-        <Text style={[styles.filterChipText, value === null && styles.filterChipTextOn]}>Alle</Text>
+        <Text style={[styles.filterChipText, value === null && styles.filterChipTextOn]}>
+          {t('common.all')}
+        </Text>
       </Pressable>
       {tags.map((tag) => {
         const on = value?.toLowerCase() === tag.toLowerCase();
@@ -766,10 +809,45 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.bgElevated,
   },
 
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 12 },
-  rowActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  rowAction: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
   stat: { color: theme.colors.textFaint, fontSize: 12 },
+  statRow: { marginTop: 10 },
+
+  // tag modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#000000AA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    padding: 20,
+  },
+  modalTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalPhrase: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  modalCloseBtn: {
+    marginTop: 20,
+    backgroundColor: theme.colors.accent,
+    paddingVertical: 13,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+  },
+  modalCloseText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 
   // training
   trainHint: {

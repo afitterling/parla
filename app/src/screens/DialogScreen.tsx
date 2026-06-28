@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,9 +12,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { PhraseItem, Settings, VocabItem } from '../storage';
+import {
+  FREE_PER_HOUR,
+  isPaywallActive,
+  PhraseItem,
+  recordUsage,
+  Settings,
+  usageInLastHour,
+  VocabItem,
+} from '../storage';
 import { findLanguage, LANGUAGES } from '../languages';
 import { useRecorder } from '../useRecorder';
+import { Paywall } from '../components/Paywall';
+import { useT } from '../i18n/I18nContext';
 import {
   chatWithAI,
   ChatTurn,
@@ -42,6 +52,7 @@ type Props = {
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
   onSetShowPinyin: (value: boolean) => void;
+  onPurchasePro: () => void;
   tagSuggestions: string[];
 };
 
@@ -53,8 +64,10 @@ export function DialogScreen({
   onChangeInputLanguage,
   onChangeGoalLanguage,
   onSetShowPinyin,
+  onPurchasePro,
   tagSuggestions,
 }: Props) {
+  const t = useT();
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
   const wantPinyin = !!goalLang.romanize && settings.showPinyin;
@@ -65,8 +78,28 @@ export function DialogScreen({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [showPaywall, setShowPaywall] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
   const recorder = useRecorder();
+  // Remaining free-tier quota this hour; null = unlimited (dev env or Pro).
+  const [quotaLeft, setQuotaLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!isPaywallActive(settings.isPro)) {
+        if (active) setQuotaLeft(null);
+        return;
+      }
+      const used = await usageInLastHour();
+      if (active) setQuotaLeft(Math.max(0, FREE_PER_HOUR - used));
+    })();
+    return () => {
+      active = false;
+    };
+  }, [settings.isPro, messages.length]);
 
   function newId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -83,9 +116,23 @@ export function DialogScreen({
     }));
   }
 
+  function cancel() {
+    cancelledRef.current = true;
+    abortRef.current?.abort();
+    setBusy(null);
+  }
+
   async function askAI(history: ChatTurn[]) {
     setError(null);
-    setBusy('Parla denkt nach …');
+    // Free-tier rate limit (Release builds, non-Pro users only).
+    if (isPaywallActive(settings.isPro) && (await usageInLastHour()) >= FREE_PER_HOUR) {
+      setShowPaywall(true);
+      setBusy(null);
+      return;
+    }
+    setBusy(t('dialog.thinking'));
+    abortRef.current = new AbortController();
+    cancelledRef.current = false;
     try {
       const reply: DialogReply = await chatWithAI(
         settings.openaiKey,
@@ -93,7 +140,8 @@ export function DialogScreen({
         inputLang,
         mode,
         history,
-        wantPinyin
+        wantPinyin,
+        abortRef.current.signal
       );
       const aiMsg: Msg = {
         id: newId(),
@@ -104,9 +152,14 @@ export function DialogScreen({
         vocab: reply.vocab,
       };
       setMessages((prev) => [...prev, aiMsg]);
+      await recordUsage();
       scrollToEnd();
     } catch (e: any) {
-      setError(e.message ?? 'Fehler beim Dialog.');
+      if (cancelledRef.current) {
+        // User cancelled — clear silently, no error.
+      } else {
+        setError(e.message ?? t('dialog.errorDialog'));
+      }
     } finally {
       setBusy(null);
     }
@@ -122,29 +175,40 @@ export function DialogScreen({
     if (recorder.state === 'recording') {
       // stop → transcribe → send
       try {
-        setBusy('Aufnahme wird verarbeitet …');
+        setBusy(t('dialog.processing'));
         const uri = await recorder.stop();
         if (!uri) {
           setBusy(null);
           return;
         }
-        setBusy('Transkribiere mit Whisper …');
-        const text = await transcribeAudio(uri, settings.openaiKey, inputLang);
+        setBusy(t('dialog.transcribing'));
+        abortRef.current = new AbortController();
+        cancelledRef.current = false;
+        const text = await transcribeAudio(
+          uri,
+          settings.openaiKey,
+          inputLang,
+          abortRef.current.signal
+        );
         setBusy(null);
         if (!text) {
-          setError('Keine Sprache erkannt. Nochmal versuchen.');
+          setError(t('dialog.errorNoSpeech'));
           return;
         }
         await sendUserText(text);
       } catch (e: any) {
         setBusy(null);
-        setError(e.message ?? 'Transkription fehlgeschlagen.');
+        if (cancelledRef.current) {
+          // User cancelled — clear silently, no error.
+        } else {
+          setError(e.message ?? t('dialog.errorTranscription'));
+        }
       }
     } else {
       try {
         await recorder.start();
       } catch (e: any) {
-        setError(e.message ?? 'Aufnahme konnte nicht gestartet werden.');
+        setError(e.message ?? t('dialog.errorRecording'));
       }
     }
   }
@@ -195,17 +259,23 @@ export function DialogScreen({
       <View style={styles.topBar}>
         <View style={styles.segment}>
           <SegBtn
-            icon="help-circle-outline"
-            label="AI fragt mich"
-            active={mode === 'ask'}
-            onPress={() => setMode('ask')}
-          />
-          <SegBtn
-            icon="chatbubbles-outline"
-            label="Frei"
+            icon="swap-horizontal-outline"
+            label={t('dialog.modeFree')}
             active={mode === 'free'}
             onPress={() => setMode('free')}
           />
+          <SegBtn
+            icon="school-outline"
+            label={t('dialog.modeAsk')}
+            active={mode === 'ask'}
+            onPress={() => setMode('ask')}
+          />
+        </View>
+        <View style={styles.quotaChip}>
+          <Ionicons name="flash-outline" size={13} color={theme.colors.accent} />
+          <Text style={styles.quotaText}>
+            {quotaLeft === null ? '∞' : `${quotaLeft}/${FREE_PER_HOUR}`}
+          </Text>
         </View>
       </View>
 
@@ -256,7 +326,7 @@ export function DialogScreen({
       {openMenu && (
         <View style={styles.langMenu}>
           <Text style={styles.langMenuTitle}>
-            {openMenu === 'input' ? 'ICH SPRECHE …' : 'ICH LERNE …'}
+            {openMenu === 'input' ? t('dialog.iSpeak') : t('dialog.iLearn')}
           </Text>
           {LANGUAGES.map((l) => {
             const current = openMenu === 'input' ? inputLang.code : goalLang.code;
@@ -274,7 +344,7 @@ export function DialogScreen({
                 <Text style={[styles.langOptionText, active && styles.langOptionTextActive]}>
                   {l.nativeName}
                 </Text>
-                <Text style={styles.langOptionSub}>{l.label}</Text>
+                <View style={styles.langOptionSub} />
                 {active && <Ionicons name="checkmark" size={15} color={theme.colors.accent} />}
               </Pressable>
             );
@@ -291,14 +361,14 @@ export function DialogScreen({
         {messages.length === 0 && (
           <View style={styles.empty}>
             <Ionicons name="mic-outline" size={56} color={theme.colors.accent} />
-            <Text style={styles.emptyTitle}>Bereit zum Sprechen</Text>
+            <Text style={styles.emptyTitle}>{t('dialog.readyTitle')}</Text>
             <Text style={styles.emptyText}>
               {mode === 'ask'
-                ? 'Parla stellt dir Fragen auf ' + goalLang.nativeName + '. Du sprichst ' + inputLang.nativeName + ' rein.'
-                : 'Sprich frei drauflos — Parla antwortet auf ' + goalLang.nativeName + '.'}
+                ? t('dialog.readyAsk', { goal: goalLang.nativeName, input: inputLang.nativeName })
+                : t('dialog.readyFree', { goal: goalLang.nativeName })}
             </Text>
             <Pressable style={styles.startBtn} onPress={startConversation} disabled={disabled}>
-              <Text style={styles.startBtnText}>Gespräch starten</Text>
+              <Text style={styles.startBtnText}>{t('dialog.startConversation')}</Text>
             </Pressable>
           </View>
         )}
@@ -324,6 +394,9 @@ export function DialogScreen({
           <View style={styles.busyRow}>
             <ActivityIndicator color={theme.colors.accent} />
             <Text style={styles.busyText}>{busy}</Text>
+            <Pressable style={styles.cancelBtn} onPress={cancel}>
+              <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
+            </Pressable>
           </View>
         )}
         {error && (
@@ -338,7 +411,7 @@ export function DialogScreen({
       <View style={styles.inputBar}>
         <TextInput
           style={styles.textInput}
-          placeholder="Tippen oder Mikro nutzen …"
+          placeholder={t('dialog.inputPlaceholder')}
           placeholderTextColor={theme.colors.textFaint}
           value={draft}
           onChangeText={setDraft}
@@ -363,9 +436,18 @@ export function DialogScreen({
       {recording && (
         <View style={styles.recHintRow}>
           <Ionicons name="ellipse" size={9} color={theme.colors.danger} />
-          <Text style={styles.recHint}>Aufnahme läuft — nochmal tippen zum Stoppen</Text>
+          <Text style={styles.recHint}>{t('dialog.recHint')}</Text>
         </View>
       )}
+
+      <Paywall
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onUpgrade={() => {
+          onPurchasePro();
+          setShowPaywall(false);
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -406,6 +488,7 @@ function AiBubble({
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   tagSuggestions: string[];
 }) {
+  const t = useT();
   const [phraseId, setPhraseId] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [showTagInput, setShowTagInput] = useState(false);
@@ -449,7 +532,7 @@ function AiBubble({
 
   return (
     <View style={[styles.bubble, styles.aiBubble]}>
-      <Text style={styles.aiLabel}>PARLA</Text>
+      <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
       <Text style={styles.aiText}>{msg.text}</Text>
       {!!msg.pinyin && <Text style={styles.pinyin}>{msg.pinyin}</Text>}
       {!!msg.translation && <Text style={styles.translation}>{msg.translation}</Text>}
@@ -483,13 +566,13 @@ function AiBubble({
         {phraseId === null ? (
           <Pressable style={styles.phraseSaveBtn} onPress={savePhrase}>
             <Ionicons name="add-circle-outline" size={16} color={theme.colors.accent} />
-            <Text style={styles.phraseSaveText}>Phrase merken</Text>
+            <Text style={styles.phraseSaveText}>{t('dialog.savePhrase')}</Text>
           </Pressable>
         ) : (
           <View>
             <View style={styles.phraseSavedRow}>
               <Ionicons name="checkmark-circle" size={15} color={theme.colors.success} />
-              <Text style={styles.phraseSavedLabel}>Phrase gemerkt — tagge sie:</Text>
+              <Text style={styles.phraseSavedLabel}>{t('dialog.phraseSaved')}</Text>
             </View>
             <View style={styles.tagRow}>
               {chipTags.map((tag) => {
@@ -508,7 +591,7 @@ function AiBubble({
               {showTagInput ? (
                 <TextInput
                   style={styles.tagInput}
-                  placeholder="neuer Tag"
+                  placeholder={t('dialog.newTag')}
                   placeholderTextColor={theme.colors.textFaint}
                   value={tagDraft}
                   onChangeText={setTagDraft}
@@ -523,7 +606,7 @@ function AiBubble({
                   onPress={() => setShowTagInput(true)}
                 >
                   <Ionicons name="add" size={13} color={theme.colors.accent} />
-                  <Text style={styles.tagChipAddText}>Tag</Text>
+                  <Text style={styles.tagChipAddText}>{t('dialog.tag')}</Text>
                 </Pressable>
               )}
             </View>
@@ -543,9 +626,10 @@ function UserBubble({
   onSave: (text: string) => void;
   saved: boolean;
 }) {
+  const t = useT();
   return (
     <View style={[styles.bubble, styles.userBubble]}>
-      <Text style={styles.userLabel}>DU</Text>
+      <Text style={styles.userLabel}>{t('bubble.you')}</Text>
       <Text style={styles.userText}>{msg.text}</Text>
       <Pressable
         onPress={() => !saved && onSave(msg.text)}
@@ -558,7 +642,7 @@ function UserBubble({
           color={saved ? theme.colors.success : theme.colors.accent2}
         />
         <Text style={[styles.userSave, saved && styles.userSaveDone]}>
-          {saved ? 'im Vokabular' : 'zum Vokabular'}
+          {saved ? t('dialog.inVocab') : t('dialog.toVocab')}
         </Text>
       </Pressable>
     </View>
@@ -574,6 +658,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 10,
   },
+  quotaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.accentDim,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  quotaText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   segment: {
     flex: 1,
     flexDirection: 'row',
@@ -766,7 +860,16 @@ const styles = StyleSheet.create({
   },
 
   busyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  busyText: { color: theme.colors.textMuted, fontSize: 13 },
+  busyText: { color: theme.colors.textMuted, fontSize: 13, flex: 1 },
+  cancelBtn: {
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: theme.colors.bgElevated,
+  },
+  cancelBtnText: { color: theme.colors.danger, fontSize: 13, fontWeight: '700' },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   error: { color: theme.colors.danger, fontSize: 13, flex: 1 },
 
