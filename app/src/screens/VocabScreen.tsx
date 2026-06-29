@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -12,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Settings, VocabItem } from '../storage';
+import { ExportFormat, exportVocab } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
@@ -42,6 +44,23 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
     setAdding(false);
   }
 
+  async function runExport(format: ExportFormat) {
+    try {
+      await exportVocab(shown, settings.goalLanguage, format, t('export.title'));
+    } catch (e: any) {
+      Alert.alert(t('export.title'), e?.message ?? String(e));
+    }
+  }
+
+  function promptExport() {
+    if (shown.length === 0) return;
+    Alert.alert(t('export.title'), t('export.choose'), [
+      { text: t('export.csv'), onPress: () => runExport('csv') },
+      { text: t('export.json'), onPress: () => runExport('json') },
+      { text: t('common.cancel'), style: 'cancel' },
+    ]);
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -58,10 +77,22 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
             {shown.length} {shown.length === 1 ? t('vocab.one') : t('vocab.many')}
           </Text>
         </View>
-        <Pressable style={styles.addToggle} onPress={() => setAdding((v) => !v)}>
-          <Ionicons name={adding ? 'close' : 'add'} size={15} color="#fff" />
-          <Text style={styles.addToggleText}>{adding ? t('common.cancel') : t('common.new')}</Text>
-        </Pressable>
+        <View style={styles.headerRight}>
+          {shown.length > 0 && (
+            <Pressable
+              style={styles.exportBtn}
+              onPress={promptExport}
+              hitSlop={8}
+              accessibilityLabel={t('export.title')}
+            >
+              <Ionicons name="share-outline" size={18} color={theme.colors.accent} />
+            </Pressable>
+          )}
+          <Pressable style={styles.addToggle} onPress={() => setAdding((v) => !v)}>
+            <Ionicons name={adding ? 'close' : 'add'} size={15} color="#fff" />
+            <Text style={styles.addToggleText}>{adding ? t('common.cancel') : t('common.new')}</Text>
+          </Pressable>
+        </View>
       </View>
 
       {adding && (
@@ -154,6 +185,15 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   count: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  exportBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentDim,
+  },
   addToggle: {
     flexDirection: 'row',
     alignItems: 'center',

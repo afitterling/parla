@@ -38,7 +38,8 @@
           "microphonePermission": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren."
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

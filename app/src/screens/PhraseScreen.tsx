@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { PhraseItem, Settings, recentTags } from '../storage';
+import { ExportFormat, exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
@@ -48,6 +49,23 @@ export function PhraseScreen({
     setView('train');
   }
 
+  async function runExport(format: ExportFormat) {
+    try {
+      await exportPhrases(shown, settings.goalLanguage, format, t('export.title'));
+    } catch (e: any) {
+      Alert.alert(t('export.title'), e?.message ?? String(e));
+    }
+  }
+
+  function promptExport() {
+    if (shown.length === 0) return;
+    Alert.alert(t('export.title'), t('export.choose'), [
+      { text: t('export.csv'), onPress: () => runExport('csv') },
+      { text: t('export.json'), onPress: () => runExport('json') },
+      { text: t('common.cancel'), style: 'cancel' },
+    ]);
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -62,6 +80,16 @@ export function PhraseScreen({
         <Text style={styles.topCount}>
           {shown.length} {shown.length === 1 ? t('phrase.one') : t('phrase.many')}
         </Text>
+        {shown.length > 0 && (
+          <Pressable
+            style={styles.exportBtn}
+            onPress={promptExport}
+            hitSlop={8}
+            accessibilityLabel={t('export.title')}
+          >
+            <Ionicons name="share-outline" size={18} color={theme.colors.accent} />
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.segment}>
@@ -688,6 +716,15 @@ const styles = StyleSheet.create({
   },
   langBadgeText: { color: theme.colors.text, fontSize: 13, fontWeight: '700' },
   topCount: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '600' },
+  exportBtn: {
+    marginLeft: 'auto',
+    width: 34,
+    height: 34,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentDim,
+  },
   segment: {
     flexDirection: 'row',
     backgroundColor: theme.colors.bgElevated,
