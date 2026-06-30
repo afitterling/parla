@@ -11,12 +11,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { theme } from '../theme';
 import { Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
+import { TagBadges, TagModal } from '../components/TagModal';
 import { useT } from '../i18n/I18nContext';
 import { TFn } from '../i18n';
 
@@ -24,10 +26,12 @@ type Props = {
   vocab: VocabItem[];
   settings: Settings;
   onRemove: (id: string) => void;
-  onAdd: (items: Omit<VocabItem, 'id' | 'createdAt'>[]) => void;
+  onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) => void;
+  onUpdate: (id: string, patch: Partial<VocabItem>) => void;
+  tagSuggestions: string[];
 };
 
-export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
+export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSuggestions }: Props) {
   const t = useT();
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
@@ -136,30 +140,89 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd }: Props) {
           data={shown}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => <Row item={item} onRemove={onRemove} t={t} />}
+          renderItem={({ item }) => (
+            <Row
+              item={item}
+              onRemove={onRemove}
+              onUpdate={onUpdate}
+              tagSuggestions={tagSuggestions}
+              t={t}
+            />
+          )}
         />
       )}
     </KeyboardAvoidingView>
   );
 }
 
-function Row({ item, onRemove, t }: { item: VocabItem; onRemove: (id: string) => void; t: TFn }) {
+function Row({
+  item,
+  onRemove,
+  onUpdate,
+  tagSuggestions,
+  t,
+}: {
+  item: VocabItem;
+  onRemove: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<VocabItem>) => void;
+  tagSuggestions: string[];
+  t: TFn;
+}) {
   const locale = speechLocale(findLanguage(item.lang));
+  const [tagModalOpen, setTagModalOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await Clipboard.setStringAsync(
+      [item.term, item.pinyin, item.translation].filter(Boolean).join(' — ')
+    );
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }
+
   return (
-    <SwipeRow onDelete={() => onRemove(item.id)} deleteLabel={t('swipe.delete')}>
+    <SwipeRow
+      onDelete={() => onRemove(item.id)}
+      onTap={() => setTagModalOpen(true)}
+      deleteLabel={t('swipe.delete')}
+    >
       <View style={styles.row}>
         <View style={styles.rowMain}>
           <Text style={styles.term}>{item.term}</Text>
           {!!item.pinyin && <Text style={styles.pinyin}>{item.pinyin}</Text>}
           {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
           {!!item.example && <Text style={styles.example}>„{item.example}"</Text>}
+          <TagBadges tags={item.tags} />
         </View>
+        <Pressable
+          style={styles.copyBtn}
+          onPress={copy}
+          hitSlop={8}
+          accessibilityLabel={t('vocab.copy')}
+        >
+          <Ionicons
+            name={copied ? 'checkmark' : 'copy-outline'}
+            size={18}
+            color={copied ? theme.colors.accent2 : theme.colors.textFaint}
+          />
+        </Pressable>
         <SpeakButton
           text={item.example ? `${item.term}. ${item.example}` : item.term}
           locale={locale}
-          style={{ marginLeft: 10 }}
+          style={{ marginLeft: 6 }}
         />
       </View>
+
+      <TagModal
+        visible={tagModalOpen}
+        title={t('tagModal.title')}
+        subtitle={item.term}
+        addLabel={t('vocab.tag')}
+        tags={item.tags}
+        suggestions={tagSuggestions}
+        onChange={(tags) => onUpdate(item.id, { tags })}
+        onClose={() => setTagModalOpen(false)}
+      />
     </SwipeRow>
   );
 }
@@ -249,6 +312,15 @@ const styles = StyleSheet.create({
   pinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: 2 },
   trans: { color: theme.colors.textMuted, fontSize: 14, marginTop: 2 },
   example: { color: theme.colors.textFaint, fontSize: 13, marginTop: 4, fontStyle: 'italic' },
+  copyBtn: {
+    marginLeft: 10,
+    width: 34,
+    height: 34,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.bgElevated,
+  },
   delBtn: { paddingLeft: 12 },
   delText: { fontSize: 18 },
 });

@@ -7,6 +7,7 @@ export type VocabItem = {
   translation: string;
   example?: string;
   lang: string;
+  tags: string[];
   createdAt: number;
 };
 
@@ -55,7 +56,9 @@ export async function loadVocab(): Promise<VocabItem[]> {
   const raw = await AsyncStorage.getItem(VOCAB_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as VocabItem[];
+    const items = JSON.parse(raw) as VocabItem[];
+    // Be tolerant of older records that predate the tags field.
+    return items.map((v) => ({ ...v, tags: Array.isArray(v.tags) ? v.tags : [] }));
   } catch {
     return [];
   }
@@ -86,12 +89,13 @@ export async function savePhrases(items: PhraseItem[]): Promise<void> {
   await AsyncStorage.setItem(PHRASE_KEY, JSON.stringify(items));
 }
 
-// Distinct tags ordered by most recent use (newest phrase that carries them
-// first). Powers the tag suggestions in the dialog, editor, and filters.
-export function recentTags(phrases: PhraseItem[]): string[] {
+// Distinct tags ordered by most recent use (newest item that carries them
+// first). Powers the tag suggestions in the dialog, editors, and filters. Works
+// for any tagged record (phrases or vocab).
+export function recentTags(items: { tags: string[]; createdAt: number }[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const p of [...phrases].sort((a, b) => b.createdAt - a.createdAt)) {
+  for (const p of [...items].sort((a, b) => b.createdAt - a.createdAt)) {
     for (const tag of p.tags) {
       const key = tag.toLowerCase();
       if (!seen.has(key)) {

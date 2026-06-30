@@ -46,11 +46,12 @@ type Msg = {
 
 type Props = {
   settings: Settings;
-  onAddVocab: (items: Omit<VocabItem, 'id' | 'createdAt'>[]) => void;
+  onAddVocab: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) => void;
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
+  onSwapLanguages: () => void;
   onSetShowPinyin: (value: boolean) => void;
   onPurchasePro: () => void;
   tagSuggestions: string[];
@@ -63,6 +64,7 @@ export function DialogScreen({
   onUpdatePhrase,
   onChangeInputLanguage,
   onChangeGoalLanguage,
+  onSwapLanguages,
   onSetShowPinyin,
   onPurchasePro,
   tagSuggestions,
@@ -294,7 +296,14 @@ export function DialogScreen({
             color={theme.colors.textMuted}
           />
         </Pressable>
-        <Ionicons name="arrow-forward" size={15} color={theme.colors.textFaint} />
+        <Pressable
+          style={styles.swapBtn}
+          onPress={onSwapLanguages}
+          hitSlop={6}
+          accessibilityLabel={t('dialog.swap')}
+        >
+          <Ionicons name="swap-horizontal" size={17} color={theme.colors.accent} />
+        </Pressable>
         <Pressable
           style={[styles.langChip, openMenu === 'goal' && styles.langChipOpen]}
           onPress={() => setOpenMenu((m) => (m === 'goal' ? null : 'goal'))}
@@ -707,6 +716,14 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   langChipOpen: { borderColor: theme.colors.accent },
+  swapBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentDim,
+  },
   pinyinToggle: {
     width: 38,
     height: 38,

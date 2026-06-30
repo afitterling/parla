@@ -3,7 +3,6 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   SectionList,
@@ -19,6 +18,7 @@ import { ExportFormat, exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
+import { TagBadges, TagModal } from '../components/TagModal';
 import { useT } from '../i18n/I18nContext';
 
 type Props = {
@@ -284,46 +284,6 @@ function PhraseRow({
 }) {
   const t = useT();
   const [tagModalOpen, setTagModalOpen] = useState(false);
-  const [showInput, setShowInput] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  function toggleTag(tag: string) {
-    const has = item.tags.some((tg) => tg.toLowerCase() === tag.toLowerCase());
-    if (has) {
-      // Confirm before removing an already-assigned tag.
-      Alert.alert(t('tagModal.removeTitle'), t('tagModal.removeMsg', { tag }), [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('tagModal.remove'),
-          style: 'destructive',
-          onPress: () =>
-            onUpdate(item.id, {
-              tags: item.tags.filter((tg) => tg.toLowerCase() !== tag.toLowerCase()),
-            }),
-        },
-      ]);
-    } else {
-      onUpdate(item.id, { tags: [...item.tags, tag] });
-    }
-  }
-
-  function addTag() {
-    const t = draft.trim();
-    setDraft('');
-    setShowInput(false);
-    if (!t || item.tags.some((x) => x.toLowerCase() === t.toLowerCase())) return;
-    onUpdate(item.id, { tags: [...item.tags, t] });
-  }
-
-  function closeModal() {
-    addTag(); // commit any pending draft
-    setTagModalOpen(false);
-  }
-
-  const chipTags = [...item.tags];
-  for (const s of tagSuggestions) {
-    if (!chipTags.some((t) => t.toLowerCase() === s.toLowerCase())) chipTags.push(s);
-  }
 
   return (
     <SwipeRow
@@ -343,15 +303,7 @@ function PhraseRow({
         {!!item.pinyin && <Text style={styles.pinyin}>{item.pinyin}</Text>}
         {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
 
-        {item.tags.length > 0 && (
-          <View style={styles.tagDisplayRow}>
-            {item.tags.map((t) => (
-              <View key={t} style={styles.tagBadge}>
-                <Text style={styles.tagBadgeText}>{t}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        <TagBadges tags={item.tags} />
 
         {item.reviews > 0 && (
           <Text style={[styles.stat, styles.statRow]}>
@@ -359,62 +311,16 @@ function PhraseRow({
           </Text>
         )}
 
-        <Modal
+        <TagModal
           visible={tagModalOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={closeModal}
-        >
-          <Pressable style={styles.modalBackdrop} onPress={closeModal}>
-            <Pressable style={styles.modalCard} onPress={() => {}}>
-              <Text style={styles.modalTitle}>{t('tagModal.title')}</Text>
-              <Text style={styles.modalPhrase} numberOfLines={2}>
-                {item.target}
-              </Text>
-
-              <View style={styles.tagEditRow}>
-                {chipTags.map((tag) => {
-                  const on = item.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
-                  return (
-                    <Pressable
-                      key={tag}
-                      style={[styles.tagChip, on && styles.tagChipOn]}
-                      onPress={() => toggleTag(tag)}
-                    >
-                      {on && <Ionicons name="checkmark" size={12} color={theme.colors.text} />}
-                      <Text style={[styles.tagChipText, on && styles.tagChipTextOn]}>{tag}</Text>
-                    </Pressable>
-                  );
-                })}
-                {showInput ? (
-                  <TextInput
-                    style={styles.tagInput}
-                    placeholder={t('tagModal.newTag')}
-                    placeholderTextColor={theme.colors.textFaint}
-                    value={draft}
-                    onChangeText={setDraft}
-                    onSubmitEditing={addTag}
-                    onBlur={addTag}
-                    autoFocus
-                    returnKeyType="done"
-                  />
-                ) : (
-                  <Pressable
-                    style={[styles.tagChip, styles.tagChipAdd]}
-                    onPress={() => setShowInput(true)}
-                  >
-                    <Ionicons name="add" size={13} color={theme.colors.accent} />
-                    <Text style={styles.tagChipAddText}>{t('phrase.tag')}</Text>
-                  </Pressable>
-                )}
-              </View>
-
-              <Pressable style={styles.modalCloseBtn} onPress={closeModal}>
-                <Text style={styles.modalCloseText}>{t('tagModal.close')}</Text>
-              </Pressable>
-            </Pressable>
-          </Pressable>
-        </Modal>
+          title={t('tagModal.title')}
+          subtitle={item.target}
+          addLabel={t('phrase.tag')}
+          tags={item.tags}
+          suggestions={tagSuggestions}
+          onChange={(tags) => onUpdate(item.id, { tags })}
+          onClose={() => setTagModalOpen(false)}
+        />
       </View>
     </SwipeRow>
   );
@@ -604,15 +510,7 @@ function TrainView({
             {direction === 'de2t' && !!current.pinyin && (
               <Text style={styles.cardPinyin}>{current.pinyin}</Text>
             )}
-            {current.tags.length > 0 && (
-              <View style={styles.tagDisplayRow}>
-                {current.tags.map((t) => (
-                  <View key={t} style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>{t}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
+            <TagBadges tags={current.tags} />
           </>
         ) : (
           <Text style={styles.cardTapHint}>{t('train.tapToReveal')}</Text>
@@ -816,83 +714,8 @@ const styles = StyleSheet.create({
   pinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: 2, fontWeight: '500' },
   trans: { color: theme.colors.textMuted, fontSize: 14, marginTop: 3 },
 
-  tagDisplayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  tagBadge: {
-    backgroundColor: theme.colors.accent2Dim,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  tagBadgeText: { color: theme.colors.accent2, fontSize: 11, fontWeight: '700' },
-
-  tagEditRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 10 },
-  tagChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: theme.colors.bgElevated,
-  },
-  tagChipOn: { borderColor: theme.colors.accent2, backgroundColor: theme.colors.accent2Dim },
-  tagChipText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
-  tagChipTextOn: { color: theme.colors.text },
-  tagChipAdd: { borderStyle: 'dashed', borderColor: theme.colors.accent },
-  tagChipAddText: { color: theme.colors.accent, fontSize: 12, fontWeight: '700' },
-  tagInput: {
-    minWidth: 110,
-    borderWidth: 1,
-    borderColor: theme.colors.accent,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 5 : 2,
-    color: theme.colors.text,
-    fontSize: 12,
-    backgroundColor: theme.colors.bgElevated,
-  },
-
   stat: { color: theme.colors.textFaint, fontSize: 12 },
   statRow: { marginTop: 10 },
-
-  // tag modal
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: '#000000AA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    padding: 20,
-  },
-  modalTitle: {
-    color: theme.colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  modalPhrase: {
-    color: theme.colors.textMuted,
-    fontSize: 14,
-    marginTop: 4,
-    marginBottom: 14,
-  },
-  modalCloseBtn: {
-    marginTop: 20,
-    backgroundColor: theme.colors.accent,
-    paddingVertical: 13,
-    borderRadius: theme.radius.pill,
-    alignItems: 'center',
-  },
-  modalCloseText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 
   // training
   trainHint: {

@@ -72,6 +72,18 @@ export default function App() {
     handleSaveSettings({ ...settings, goalLanguage: code });
   }
 
+  // Flip the spoken (input) and learned (goal) languages in one write — chaining
+  // the two setters above would each spread the same stale `settings` and the
+  // second would clobber the first.
+  function swapLanguages() {
+    if (!settings) return;
+    handleSaveSettings({
+      ...settings,
+      inputLanguage: settings.goalLanguage,
+      goalLanguage: settings.inputLanguage,
+    });
+  }
+
   function setShowPinyin(value: boolean) {
     if (!settings) return;
     handleSaveSettings({ ...settings, showPinyin: value });
@@ -108,7 +120,9 @@ export default function App() {
     );
   }
 
-  function addVocab(items: Omit<VocabItem, 'id' | 'createdAt'>[]) {
+  // New vocab starts untagged; tags are added later via the row tag editor, so
+  // the add payload deliberately omits them.
+  function addVocab(items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) {
     setVocab((prev) => {
       const existing = new Set(prev.map((v) => `${v.lang}:${v.term.toLowerCase()}`));
       const fresh = items
@@ -116,9 +130,18 @@ export default function App() {
         .map((i) => ({
           ...i,
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          tags: [],
           createdAt: Date.now(),
         }));
       const next = [...fresh, ...prev];
+      saveVocab(next);
+      return next;
+    });
+  }
+
+  function updateVocab(id: string, patch: Partial<VocabItem>) {
+    setVocab((prev) => {
+      const next = prev.map((v) => (v.id === id ? { ...v, ...patch } : v));
       saveVocab(next);
       return next;
     });
@@ -206,13 +229,21 @@ export default function App() {
             onUpdatePhrase={updatePhrase}
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
+            onSwapLanguages={swapLanguages}
             onSetShowPinyin={setShowPinyin}
             onPurchasePro={purchasePro}
             tagSuggestions={recentTags(phrases)}
           />
         )}
         {tab === 'vocab' && (
-          <VocabScreen vocab={vocab} onRemove={removeVocab} onAdd={addVocab} settings={settings} />
+          <VocabScreen
+            vocab={vocab}
+            onRemove={removeVocab}
+            onAdd={addVocab}
+            onUpdate={updateVocab}
+            tagSuggestions={recentTags(vocab)}
+            settings={settings}
+          />
         )}
         {tab === 'phrases' && (
           <PhraseScreen
