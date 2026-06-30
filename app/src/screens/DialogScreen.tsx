@@ -22,9 +22,10 @@ import {
   usageInLastHour,
   VocabItem,
 } from '../storage';
-import { findLanguage, LANGUAGES } from '../languages';
+import { findLanguage } from '../languages';
 import { useRecorder } from '../useRecorder';
 import { Paywall } from '../components/Paywall';
+import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import {
   chatWithAI,
@@ -325,44 +326,26 @@ export function DialogScreen({
           <Pressable
             style={[styles.pinyinToggle, settings.showPinyin && styles.pinyinToggleOn]}
             onPress={() => onSetShowPinyin(!settings.showPinyin)}
+            accessibilityLabel={t('dialog.romanize')}
           >
             <Text
               style={[styles.pinyinToggleText, settings.showPinyin && styles.pinyinToggleTextOn]}
             >
-              拼
+              Aa
             </Text>
           </Pressable>
         )}
       </View>
 
-      {openMenu && (
-        <View style={styles.langMenu}>
-          <Text style={styles.langMenuTitle}>
-            {openMenu === 'input' ? t('dialog.iSpeak') : t('dialog.iLearn')}
-          </Text>
-          {LANGUAGES.map((l) => {
-            const current = openMenu === 'input' ? inputLang.code : goalLang.code;
-            const active = l.code === current;
-            return (
-              <Pressable
-                key={l.code}
-                style={[styles.langOption, active && styles.langOptionActive]}
-                onPress={() => {
-                  if (openMenu === 'input') onChangeInputLanguage(l.code);
-                  else onChangeGoalLanguage(l.code);
-                  setOpenMenu(null);
-                }}
-              >
-                <Text style={[styles.langOptionText, active && styles.langOptionTextActive]}>
-                  {l.nativeName}
-                </Text>
-                <View style={styles.langOptionSub} />
-                {active && <Ionicons name="checkmark" size={15} color={theme.colors.accent} />}
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
+      <LanguagePicker
+        visible={openMenu !== null}
+        title={openMenu === 'input' ? t('dialog.iSpeak') : t('dialog.iLearn')}
+        selectedCode={openMenu === 'input' ? inputLang.code : goalLang.code}
+        onSelect={(code) =>
+          openMenu === 'input' ? onChangeInputLanguage(code) : onChangeGoalLanguage(code)
+        }
+        onClose={() => setOpenMenu(null)}
+      />
 
       <ScrollView
         ref={scrollRef}
@@ -748,37 +731,6 @@ function makeStyles(theme: Theme) {
   pinyinToggleText: { color: theme.colors.textFaint, fontSize: 16, fontWeight: '800' },
   pinyinToggleTextOn: { color: theme.colors.accent2 },
   langChipText: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: '600' },
-  langMenuTitle: {
-    color: theme.colors.textFaint,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 2,
-  },
-  langMenu: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    overflow: 'hidden',
-  },
-  langOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.cardBorder,
-  },
-  langOptionActive: { backgroundColor: theme.colors.accentDim },
-  langOptionText: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
-  langOptionTextActive: { color: theme.colors.accent },
-  langOptionSub: { color: theme.colors.textFaint, fontSize: 12, flex: 1 },
 
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 24, gap: 12 },

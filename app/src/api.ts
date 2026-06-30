@@ -122,10 +122,10 @@ function buildSystemPrompt(
       : `Du bist ein präziser Übersetzer für ${goal.label} (${goal.nativeName}). Der Lernende gibt dir Text (meist auf ${input.nativeName} oder gemischt) — übersetze ihn natürlich und idiomatisch nach ${goal.nativeName} und gib das Ergebnis als "target". Übersetze ALLES, egal welches Thema, ohne Wertung. Mach KEINEN Smalltalk, stelle keine Gegenfragen, antworte nicht inhaltlich — du übersetzt nur. Ist die Eingabe bereits auf ${goal.nativeName}, verbessere sie idiomatisch.`;
 
   const pinyinField = wantPinyin
-    ? `\n  "pinyin": "<Umschrift (Pinyin bzw. Romaji) von target als Lesehilfe>",`
+    ? `\n  "pinyin": "<lateinische Umschrift/Transliteration von target als Lesehilfe>",`
     : '';
   const pinyinRule = wantPinyin
-    ? `\n- "pinyin": IMMER die korrekte Umschrift von target angeben (Mandarin: Pinyin mit Tönen; Japanisch: Romaji).`
+    ? `\n- "pinyin": IMMER die lateinische Umschrift von target im gängigen System der Zielsprache angeben (z.B. Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, Russisch/Griechisch/Arabisch/Hebräisch/Thai/Hindi usw.: übliche Transliteration).`
     : '';
 
   return `${intro}

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { Settings } from '../storage';
-import { LANGUAGES } from '../languages';
+import { findLanguage } from '../languages';
+import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import { UI_LANGS } from '../i18n';
 
@@ -42,6 +44,7 @@ export function SettingsScreen({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const t = useT();
+  const [picker, setPicker] = useState<'input' | 'goal' | null>(null);
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -138,18 +141,18 @@ export function SettingsScreen({
         </View>
 
         <Text style={styles.sectionLabel}>{t('settings.iSpeakInput')}</Text>
-        <LangGrid
-          active={settings.inputLanguage}
-          icon="mic-outline"
-          onPick={onChangeInputLanguage}
-        />
+        <Pressable style={styles.selector} onPress={() => setPicker('input')}>
+          <Ionicons name="mic-outline" size={20} color={theme.colors.accent} />
+          <Text style={styles.selectorValue}>{findLanguage(settings.inputLanguage).nativeName}</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
+        </Pressable>
 
         <Text style={styles.sectionLabel}>{t('settings.iLearnGoal')}</Text>
-        <LangGrid
-          active={settings.goalLanguage}
-          icon="school-outline"
-          onPick={onChangeGoalLanguage}
-        />
+        <Pressable style={styles.selector} onPress={() => setPicker('goal')}>
+          <Ionicons name="school-outline" size={20} color={theme.colors.accent} />
+          <Text style={styles.selectorValue}>{findLanguage(settings.goalLanguage).nativeName}</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
+        </Pressable>
 
         <Text style={styles.sectionLabel}>{t('settings.parlaPro')}</Text>
         <View style={styles.card}>
@@ -178,43 +181,17 @@ export function SettingsScreen({
           <Text style={styles.hint}>{t('settings.proHint')}</Text>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
 
-function LangGrid({
-  active,
-  icon,
-  onPick,
-}: {
-  active: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPick: (code: string) => void;
-}) {
-  const styles = useStyles(makeStyles);
-  const theme = useTheme();
-  return (
-    <View style={styles.langGrid}>
-      {LANGUAGES.map((l) => {
-        const isActive = l.code === active;
-        return (
-          <Pressable
-            key={l.code}
-            style={[styles.langTile, isActive && styles.langTileActive]}
-            onPress={() => onPick(l.code)}
-          >
-            <Ionicons
-              name={icon}
-              size={22}
-              color={isActive ? theme.colors.accent : theme.colors.textMuted}
-            />
-            <Text style={[styles.langName, isActive && styles.langNameActive]}>
-              {l.nativeName}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+      <LanguagePicker
+        visible={picker !== null}
+        title={picker === 'input' ? t('settings.iSpeakInput') : t('settings.iLearnGoal')}
+        selectedCode={picker === 'input' ? settings.inputLanguage : settings.goalLanguage}
+        onSelect={(code) =>
+          picker === 'input' ? onChangeInputLanguage(code) : onChangeGoalLanguage(code)
+        }
+        onClose={() => setPicker(null)}
+      />
+    </KeyboardAvoidingView>
   );
 }
 
@@ -254,6 +231,18 @@ function makeStyles(theme: Theme) {
     alignItems: 'center',
   },
   langTileActive: { borderColor: theme.colors.accent, backgroundColor: theme.colors.accentDim },
+  selector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  selectorValue: { flex: 1, color: theme.colors.text, fontSize: 16, fontWeight: '700' },
   langFlag: { fontSize: 26 },
   langName: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700', marginTop: 6 },
   langNameActive: { color: theme.colors.text },
