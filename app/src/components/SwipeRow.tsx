@@ -8,7 +8,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles } from '../ThemeContext';
 
 type Props = {
   children: React.ReactNode;
@@ -31,6 +32,7 @@ export function SwipeRow({
   deleteLabel = 'Löschen',
   learnLabel = 'Lernen',
 }: Props) {
+  const styles = useStyles(makeStyles);
   const translateX = useRef(new Animated.Value(0)).current;
   // Resting position so the pan gesture is relative to it. `openRef` mirrors
   // whether the row is currently open so the Pressable tap handler can tell
@@ -133,7 +135,8 @@ export function SwipeRow({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   wrap: { position: 'relative' },
   body: { backgroundColor: theme.colors.bg },
   action: {
@@ -158,4 +161,5 @@ const styles = StyleSheet.create({
     paddingRight: 18,
   },
   deleteText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-});
+  });
+}

@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles } from '../ThemeContext';
 import { useT } from '../i18n/I18nContext';
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export function Paywall({ visible, onClose, onUpgrade }: Props) {
+  const styles = useStyles(makeStyles);
   const t = useT();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -29,7 +31,8 @@ export function Paywall({ visible, onClose, onUpgrade }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: '#000000AA',
@@ -57,4 +60,5 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   textBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   textBtnText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '700' },
-});
+  });
+}

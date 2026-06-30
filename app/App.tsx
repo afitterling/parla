@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,10 +8,12 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  useColorScheme,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from './src/theme';
+import { Theme, themeFor } from './src/theme';
+import { ThemeProvider, resolveThemeMode } from './src/ThemeContext';
 import {
   loadPhrases,
   loadSettings,
@@ -46,6 +48,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [vocab, setVocab] = useState<VocabItem[]>([]);
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
+  const scheme = useColorScheme();
 
   useEffect(() => {
     (async () => {
@@ -102,6 +105,11 @@ export default function App() {
   function setDefaultMode(mode: 'free' | 'ask') {
     if (!settings) return;
     handleSaveSettings({ ...settings, defaultMode: mode });
+  }
+
+  function setTheme(mode: 'light' | 'dark' | 'system') {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, theme: mode });
   }
 
   function purchasePro() {
@@ -191,13 +199,23 @@ export default function App() {
     });
   }
 
+  // Resolve the active palette from the persisted setting + OS scheme. Computed
+  // here (not via useTheme) because App owns the ThemeProvider; the same value
+  // feeds the provider, the local styles, and the StatusBar.
+  const mode = resolveThemeMode(settings?.theme ?? 'system', scheme);
+  const appTheme = themeFor(mode);
+  const styles = useMemo(() => makeStyles(appTheme), [appTheme]);
+  const barStyle = mode === 'dark' ? 'light-content' : 'dark-content';
+
   if (!ready || !settings) {
     return (
-      <View style={[styles.root, styles.center]}>
-        <StatusBar barStyle="light-content" />
-        <Text style={[styles.logo, styles.logoWord]}>Parla</Text>
-        <ActivityIndicator color={theme.colors.accent} style={{ marginTop: 16 }} />
-      </View>
+      <ThemeProvider theme={appTheme}>
+        <View style={[styles.root, styles.center]}>
+          <StatusBar barStyle={barStyle} />
+          <Text style={[styles.logo, styles.logoWord]}>Parla</Text>
+          <ActivityIndicator color={appTheme.colors.accent} style={{ marginTop: 16 }} />
+        </View>
+      </ThemeProvider>
     );
   }
 
@@ -205,12 +223,14 @@ export default function App() {
   const t = makeT(uiLang);
 
   return (
+    <ThemeProvider theme={appTheme}>
     <I18nProvider lang={uiLang}>
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={theme.colors.bg} />
+      <StatusBar barStyle={barStyle} backgroundColor={appTheme.colors.bg} />
       <View style={styles.header}>
         <View style={styles.logoMark}>
           <Text style={styles.logoMarkText}>文</Text>
+          <View style={styles.logoDot} />
         </View>
         <View style={styles.headerText}>
           <Text style={styles.logo}>
@@ -261,6 +281,7 @@ export default function App() {
             onChangeGoalLanguage={changeGoalLanguage}
             setUiLanguage={setUiLanguage}
             setDefaultMode={setDefaultMode}
+            setTheme={setTheme}
             setPro={setPro}
             purchasePro={purchasePro}
             restorePurchases={restorePurchases}
@@ -276,7 +297,7 @@ export default function App() {
               <Ionicons
                 name={tb.icon}
                 size={22}
-                color={active ? theme.colors.accent : theme.colors.textFaint}
+                color={active ? appTheme.colors.accent : appTheme.colors.textFaint}
               />
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
                 {t('tab.' + tb.key)}
@@ -290,64 +311,78 @@ export default function App() {
       </View>
     </SafeAreaView>
     </I18nProvider>
+    </ThemeProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.bg },
-  center: { alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingTop: Platform.OS === 'android' ? 16 : 4,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  logoMark: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: theme.colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: theme.colors.accent2,
-    shadowColor: theme.colors.accent,
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  logoMarkText: { color: '#fff', fontSize: 24, fontWeight: '900', marginTop: -1 },
-  headerText: { flex: 1 },
-  logo: { fontSize: 30, fontWeight: '900', color: theme.colors.text, letterSpacing: -0.5 },
-  logoWord: { color: theme.colors.accent },
-  tagline: {
-    color: theme.colors.accent2,
-    fontSize: 10,
-    fontWeight: '800',
-    marginTop: 1,
-    letterSpacing: 2,
-  },
-  body: { flex: 1 },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.bgElevated,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.cardBorder,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 10,
-    paddingTop: 10,
-  },
-  tab: { flex: 1, alignItems: 'center', gap: 2 },
-  tabIcon: { fontSize: 20, opacity: 0.5 },
-  tabIconActive: { opacity: 1 },
-  tabLabel: { color: theme.colors.textFaint, fontSize: 11, fontWeight: '600' },
-  tabLabelActive: { color: theme.colors.text },
-  tabDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.accent,
-    marginTop: 2,
-  },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.bg },
+    center: { alignItems: 'center', justifyContent: 'center' },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
+      paddingTop: Platform.OS === 'android' ? 16 : 4,
+      paddingHorizontal: 20,
+      paddingBottom: 10,
+    },
+    logoMark: {
+      width: 46,
+      height: 46,
+      borderRadius: 15,
+      backgroundColor: theme.colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: theme.colors.accent,
+      shadowOpacity: 0.55,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 5 },
+      elevation: 8,
+    },
+    logoMarkText: { color: '#fff', fontSize: 25, fontWeight: '900', marginTop: -1 },
+    // Cyan accent pip echoing the orange→cyan brand gradient on the app icon.
+    logoDot: {
+      position: 'absolute',
+      top: -2,
+      right: -2,
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: theme.colors.accent2,
+      borderWidth: 2.5,
+      borderColor: theme.colors.bg,
+    },
+    headerText: { flex: 1 },
+    logo: { fontSize: 31, fontWeight: '900', color: theme.colors.text, letterSpacing: -0.5 },
+    logoWord: { color: theme.colors.accent },
+    tagline: {
+      color: theme.colors.accent2,
+      fontSize: 10,
+      fontWeight: '800',
+      marginTop: 2,
+      letterSpacing: 2,
+    },
+    body: { flex: 1 },
+    tabBar: {
+      flexDirection: 'row',
+      backgroundColor: theme.colors.bgElevated,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.cardBorder,
+      paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+      paddingTop: 10,
+    },
+    tab: { flex: 1, alignItems: 'center', gap: 2 },
+    tabIcon: { fontSize: 20, opacity: 0.5 },
+    tabIconActive: { opacity: 1 },
+    tabLabel: { color: theme.colors.textFaint, fontSize: 11, fontWeight: '600' },
+    tabLabelActive: { color: theme.colors.text },
+    tabDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.colors.accent,
+      marginTop: 2,
+    },
+  });
+}

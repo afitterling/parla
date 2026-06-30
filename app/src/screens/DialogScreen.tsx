@@ -11,7 +11,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles, useTheme } from '../ThemeContext';
 import {
   FREE_PER_HOUR,
   isPaywallActive,
@@ -70,6 +71,8 @@ export function DialogScreen({
   tagSuggestions,
 }: Props) {
   const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
   const wantPinyin = !!goalLang.romanize && settings.showPinyin;
@@ -472,6 +475,8 @@ function SegBtn({
   active: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   return (
     <Pressable style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress}>
       <Ionicons name={icon} size={15} color={active ? '#fff' : theme.colors.textMuted} />
@@ -498,6 +503,8 @@ function AiBubble({
   tagSuggestions: string[];
 }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [phraseId, setPhraseId] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [showTagInput, setShowTagInput] = useState(false);
@@ -636,6 +643,8 @@ function UserBubble({
   saved: boolean;
 }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   return (
     <View style={[styles.bubble, styles.userBubble]}>
       <Text style={styles.userLabel}>{t('bubble.you')}</Text>
@@ -658,7 +667,8 @@ function UserBubble({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   container: { flex: 1 },
   topBar: {
     flexDirection: 'row',
@@ -934,4 +944,5 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   recHint: { color: theme.colors.danger, fontSize: 12 },
-});
+  });
+}

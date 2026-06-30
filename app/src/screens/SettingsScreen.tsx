@@ -9,7 +9,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles, useTheme } from '../ThemeContext';
 import { Settings } from '../storage';
 import { LANGUAGES } from '../languages';
 import { useT } from '../i18n/I18nContext';
@@ -21,6 +22,7 @@ type Props = {
   onChangeGoalLanguage: (code: string) => void;
   setUiLanguage: (code: string) => void;
   setDefaultMode: (mode: 'free' | 'ask') => void;
+  setTheme: (mode: 'light' | 'dark' | 'system') => void;
   setPro: (value: boolean) => void;
   purchasePro: () => void;
   restorePurchases: () => void;
@@ -32,10 +34,13 @@ export function SettingsScreen({
   onChangeGoalLanguage,
   setUiLanguage,
   setDefaultMode,
+  setTheme,
   setPro,
   purchasePro,
   restorePurchases,
 }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const t = useT();
   return (
     <KeyboardAvoidingView
@@ -107,6 +112,31 @@ export function SettingsScreen({
           })}
         </View>
 
+        <Text style={styles.sectionLabel}>{t('settings.theme').toUpperCase()}</Text>
+        <View style={styles.modeGrid}>
+          {([
+            { mode: 'system' as const, icon: 'phone-portrait-outline' as const, label: t('theme.system') },
+            { mode: 'light' as const, icon: 'sunny-outline' as const, label: t('theme.light') },
+            { mode: 'dark' as const, icon: 'moon-outline' as const, label: t('theme.dark') },
+          ]).map((m) => {
+            const isActive = settings.theme === m.mode;
+            return (
+              <Pressable
+                key={m.mode}
+                style={[styles.modeTile, isActive && styles.langTileActive]}
+                onPress={() => setTheme(m.mode)}
+              >
+                <Ionicons
+                  name={m.icon}
+                  size={22}
+                  color={isActive ? theme.colors.accent : theme.colors.textMuted}
+                />
+                <Text style={[styles.langName, isActive && styles.langNameActive]}>{m.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <Text style={styles.sectionLabel}>{t('settings.iSpeakInput')}</Text>
         <LangGrid
           active={settings.inputLanguage}
@@ -161,6 +191,8 @@ function LangGrid({
   icon: keyof typeof Ionicons.glyphMap;
   onPick: (code: string) => void;
 }) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   return (
     <View style={styles.langGrid}>
       {LANGUAGES.map((l) => {
@@ -186,7 +218,8 @@ function LangGrid({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
   sectionLabel: {
@@ -256,4 +289,5 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   textBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 2 },
   textBtnText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '700' },
-});
+  });
+}

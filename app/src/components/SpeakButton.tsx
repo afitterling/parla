@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, ViewStyle } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles, useTheme } from '../ThemeContext';
 
 type Props = {
   text: string;
@@ -14,6 +15,8 @@ type Props = {
 
 // Round play/stop button that reads `text` aloud via the device TTS engine.
 export function SpeakButton({ text, locale, size = 18, style }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [speaking, setSpeaking] = useState(false);
 
   // Stop any in-flight speech when the row unmounts.
@@ -50,14 +53,16 @@ export function SpeakButton({ text, locale, size = 18, style }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  btn: {
-    width: 38,
-    height: 38,
-    borderRadius: theme.radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.accent2Dim,
-  },
-  btnActive: { backgroundColor: theme.colors.accent2 },
-});
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
+    btn: {
+      width: 38,
+      height: 38,
+      borderRadius: theme.radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.accent2Dim,
+    },
+    btnActive: { backgroundColor: theme.colors.accent2 },
+  });
+}

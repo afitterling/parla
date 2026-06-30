@@ -32,6 +32,7 @@ export type Settings = {
   isPro: boolean; // Parla Pro — removes the free-tier rate limit
   uiLanguage: string; // app UI language: a UiLang code or 'auto' (device locale)
   defaultMode: 'free' | 'ask'; // which dialog mode starts active: 'free'=Interpreter, 'ask'=Coach
+  theme: 'light' | 'dark' | 'system'; // color theme; 'system' follows the OS
 };
 
 const VOCAB_KEY = 'parla.vocab';
@@ -123,6 +124,7 @@ export async function loadSettings(): Promise<Settings> {
     isPro: stored.isPro ?? false,
     uiLanguage: stored.uiLanguage || 'auto',
     defaultMode: stored.defaultMode === 'ask' ? 'ask' : 'free',
+    theme: stored.theme === 'light' || stored.theme === 'dark' ? stored.theme : 'system',
   };
 }
 

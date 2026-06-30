@@ -12,7 +12,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles, useTheme } from '../ThemeContext';
 import { PhraseItem, Settings, recentTags } from '../storage';
 import { ExportFormat, exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
@@ -37,6 +38,8 @@ export function PhraseScreen({
   settings,
 }: Props & { settings: Settings }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [view, setView] = useState<View2>('list');
   const [learnPhrase, setLearnPhrase] = useState<PhraseItem | null>(null);
 
@@ -140,6 +143,8 @@ function ListView({
   onLearn,
 }: Props & { onLearn: (item: PhraseItem) => void }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [search, setSearch] = useState('');
   const [ordering, setOrdering] = useState<'latest' | 'tag'>('latest');
   const [filterTag, setFilterTag] = useState<string | null>(null);
@@ -283,6 +288,7 @@ function PhraseRow({
   onLearn: (item: PhraseItem) => void;
 }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
   const [tagModalOpen, setTagModalOpen] = useState(false);
 
   return (
@@ -341,6 +347,8 @@ function TrainView({
   onClearLearn: () => void;
 }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   // Show the original target-language phrase first by default.
   const [direction, setDirection] = useState<'de2t' | 't2de'>('t2de');
   const [sessionTag, setSessionTag] = useState<string | null>(null);
@@ -548,6 +556,7 @@ function TagFilterRow({
   onChange: (v: string | null) => void;
 }) {
   const t = useT();
+  const styles = useStyles(makeStyles);
   if (tags.length === 0) return null;
   return (
     <View style={styles.filterRow}>
@@ -586,6 +595,8 @@ function Seg({
   active: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   return (
     <Pressable style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress}>
       <Ionicons name={icon} size={15} color={active ? '#fff' : theme.colors.textMuted} />
@@ -594,7 +605,8 @@ function Seg({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   container: { flex: 1 },
   topRow: {
     flexDirection: 'row',
@@ -812,4 +824,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   revealText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-});
+  });
+}

@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles, useTheme } from '../ThemeContext';
 import { Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
 import { findLanguage, speechLocale } from '../languages';
@@ -32,6 +33,8 @@ type Props = {
 };
 
 export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSuggestions }: Props) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const t = useT();
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
@@ -168,6 +171,8 @@ function Row({
   tagSuggestions: string[];
   t: TFn;
 }) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const locale = speechLocale(findLanguage(item.lang));
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -227,7 +232,8 @@ function Row({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   container: { flex: 1 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   langBadge: {
@@ -323,4 +329,5 @@ const styles = StyleSheet.create({
   },
   delBtn: { paddingLeft: 12 },
   delText: { fontSize: 18 },
-});
+  });
+}

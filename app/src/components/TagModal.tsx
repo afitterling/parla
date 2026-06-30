@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Alert, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { Theme } from '../theme';
+import { useStyles, useTheme } from '../ThemeContext';
 import { useT } from '../i18n/I18nContext';
 
 // A tap-to-edit tag picker shared by the Phrase and Vocab rows: toggleable
@@ -29,6 +30,8 @@ export function TagModal({
   onChange,
   onClose,
 }: TagModalProps) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const t = useT();
   const [showInput, setShowInput] = useState(false);
   const [draft, setDraft] = useState('');
@@ -126,6 +129,7 @@ export function TagModal({
 
 // Read-only row of tag badges shown beneath a phrase / vocab entry.
 export function TagBadges({ tags }: { tags: string[] }) {
+  const styles = useStyles(makeStyles);
   if (tags.length === 0) return null;
   return (
     <View style={styles.tagDisplayRow}>
@@ -138,7 +142,8 @@ export function TagBadges({ tags }: { tags: string[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: Theme) {
+  return StyleSheet.create({
   tagDisplayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
   tagBadge: {
     backgroundColor: theme.colors.accent2Dim,
@@ -203,4 +208,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-});
+  });
+}
