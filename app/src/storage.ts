@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as iCloud from '../modules/parla-icloud';
 
 export type VocabItem = {
   id: string;
@@ -6,6 +7,8 @@ export type VocabItem = {
   pinyin?: string; // Pinyin/Romaji reading aid (Asian goal languages)
   translation: string;
   example?: string;
+  examplePinyin?: string; // reading aid for the example sentence
+  exampleTranslation?: string; // example sentence translated into the input language
   lang: string;
   tags: string[];
   createdAt: number;
@@ -35,10 +38,102 @@ export type Settings = {
   theme: 'light' | 'dark' | 'system'; // color theme; 'system' follows the OS
 };
 
-const VOCAB_KEY = 'parla.vocab';
-const PHRASE_KEY = 'parla.phrases';
-const SETTINGS_KEY = 'parla.settings';
-const USAGE_KEY = 'parla.usage';
+// ── Storage backing ───────────────────────────────────────────────────────────
+// Data lives as JSON files in the app's iCloud "Documents" container, which the
+// Mac (Electron) app shares — this is what gives cross-device sync. A local
+// AsyncStorage mirror keeps everything working offline / when iCloud is signed
+// out, and covers migration from the pre-iCloud builds.
+//
+// File names match the desktop app so both platforms read/write the same files.
+const VOCAB_FILE = 'vocab.json';
+const PHRASE_FILE = 'phrases.json';
+const SETTINGS_FILE = 'settings.json';
+const USAGE_FILE = 'usage.json';
+
+// AsyncStorage keys used by pre-iCloud builds — read once so upgrading users keep
+// their data (it gets merged into iCloud on first load).
+const LEGACY_KEYS: Record<string, string> = {
+  [VOCAB_FILE]: 'parla.vocab',
+  [PHRASE_FILE]: 'parla.phrases',
+  [SETTINGS_FILE]: 'parla.settings',
+  [USAGE_FILE]: 'parla.usage',
+};
+
+function mirrorKey(file: string): string {
+  return `parla.file.${file}`;
+}
+
+// Read the iCloud copy (shared with other devices), if any.
+async function readCloud(file: string): Promise<string | null> {
+  return iCloud.readFile(file);
+}
+
+// Read the local copy: the mirror first, then the legacy pre-iCloud key.
+async function readLocal(file: string): Promise<string | null> {
+  const mirror = await AsyncStorage.getItem(mirrorKey(file));
+  if (mirror != null) return mirror;
+  return AsyncStorage.getItem(LEGACY_KEYS[file]);
+}
+
+// First non-empty of iCloud → mirror → legacy. Used for single-value files
+// (settings, usage) where a merge doesn't apply.
+async function readRaw(file: string): Promise<string | null> {
+  const cloud = await readCloud(file);
+  if (cloud != null) return cloud;
+  return readLocal(file);
+}
+
+// Persist to the local mirror always; push to iCloud best-effort (a failure just
+// means we're offline — the mirror still has the data and syncs on the next save).
+async function writeRaw(file: string, content: string): Promise<void> {
+  await AsyncStorage.setItem(mirrorKey(file), content);
+  try {
+    await iCloud.writeFile(file, content);
+  } catch {
+    // offline / iCloud unavailable — mirror holds it
+  }
+}
+
+function parseArray(raw: string | null): any[] {
+  if (!raw) return [];
+  try {
+    const a = JSON.parse(raw);
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+
+// Number of "meaningful" fields on a record — used to pick the richer copy when
+// the same id exists on two devices (e.g. one has an enriched example).
+function filledCount(o: Record<string, unknown>): number {
+  return Object.values(o).filter(
+    (v) => v != null && v !== '' && !(Array.isArray(v) && v.length === 0)
+  ).length;
+}
+
+// Union two record lists by id; on a clash keep the copy with more filled fields.
+// Never drops an item that exists on either side, so offline edits on either the
+// phone or the Mac survive a sync.
+function mergeById<T extends { id: string; createdAt?: number }>(a: T[], b: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const it of a) if (it?.id) map.set(it.id, it);
+  for (const it of b) {
+    if (!it?.id) continue;
+    const existing = map.get(it.id);
+    if (!existing) map.set(it.id, it);
+    else if (filledCount(it) > filledCount(existing)) map.set(it.id, it);
+  }
+  return [...map.values()].sort((x, y) => (x.createdAt ?? 0) - (y.createdAt ?? 0));
+}
+
+// After merging on load, converge both stores if the merge added anything the
+// iCloud copy was missing (migration + healing offline divergence).
+async function reconcile(file: string, merged: unknown[], cloudCount: number): Promise<void> {
+  if (merged.length > 0 && merged.length !== cloudCount) {
+    await writeRaw(file, JSON.stringify(merged));
+  }
+}
 
 const HOUR_MS = 3_600_000;
 
@@ -53,41 +148,43 @@ function isPlaceholder(key: string): boolean {
   return !key || key.includes('REPLACE_ME') || key.endsWith('...');
 }
 
+function normalizeVocab(items: any[]): VocabItem[] {
+  // Be tolerant of older records that predate the tags field.
+  return items.map((v) => ({ ...v, tags: Array.isArray(v.tags) ? v.tags : [] })) as VocabItem[];
+}
+
 export async function loadVocab(): Promise<VocabItem[]> {
-  const raw = await AsyncStorage.getItem(VOCAB_KEY);
-  if (!raw) return [];
-  try {
-    const items = JSON.parse(raw) as VocabItem[];
-    // Be tolerant of older records that predate the tags field.
-    return items.map((v) => ({ ...v, tags: Array.isArray(v.tags) ? v.tags : [] }));
-  } catch {
-    return [];
-  }
+  const cloud = normalizeVocab(parseArray(await readCloud(VOCAB_FILE)));
+  const local = normalizeVocab(parseArray(await readLocal(VOCAB_FILE)));
+  const merged = mergeById(cloud, local);
+  await reconcile(VOCAB_FILE, merged, cloud.length);
+  return merged;
 }
 
 export async function saveVocab(items: VocabItem[]): Promise<void> {
-  await AsyncStorage.setItem(VOCAB_KEY, JSON.stringify(items));
+  await writeRaw(VOCAB_FILE, JSON.stringify(items));
+}
+
+function normalizePhrases(items: any[]): PhraseItem[] {
+  // Be tolerant of older records that predate the tags/stats fields.
+  return items.map((p) => ({
+    ...p,
+    tags: Array.isArray(p.tags) ? p.tags : [],
+    reviews: p.reviews ?? 0,
+    known: p.known ?? 0,
+  })) as PhraseItem[];
 }
 
 export async function loadPhrases(): Promise<PhraseItem[]> {
-  const raw = await AsyncStorage.getItem(PHRASE_KEY);
-  if (!raw) return [];
-  try {
-    const items = JSON.parse(raw) as PhraseItem[];
-    // Be tolerant of older records that predate the tags/stats fields.
-    return items.map((p) => ({
-      ...p,
-      tags: Array.isArray(p.tags) ? p.tags : [],
-      reviews: p.reviews ?? 0,
-      known: p.known ?? 0,
-    }));
-  } catch {
-    return [];
-  }
+  const cloud = normalizePhrases(parseArray(await readCloud(PHRASE_FILE)));
+  const local = normalizePhrases(parseArray(await readLocal(PHRASE_FILE)));
+  const merged = mergeById(cloud, local);
+  await reconcile(PHRASE_FILE, merged, cloud.length);
+  return merged;
 }
 
 export async function savePhrases(items: PhraseItem[]): Promise<void> {
-  await AsyncStorage.setItem(PHRASE_KEY, JSON.stringify(items));
+  await writeRaw(PHRASE_FILE, JSON.stringify(items));
 }
 
 // Distinct tags ordered by most recent use (newest item that carries them
@@ -109,7 +206,7 @@ export function recentTags(items: { tags: string[]; createdAt: number }[]): stri
 }
 
 export async function loadSettings(): Promise<Settings> {
-  const raw = await AsyncStorage.getItem(SETTINGS_KEY);
+  const raw = await readRaw(SETTINGS_FILE);
   const stored: Partial<Settings> & { language?: string } = raw ? safeParse(raw) : {};
   return {
     // Keys are injected from .env.dev (EXPO_PUBLIC_*) at build time and are the
@@ -129,7 +226,7 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
-  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  await writeRaw(SETTINGS_FILE, JSON.stringify(s));
 }
 
 function safeParse(raw: string): Partial<Settings> {
@@ -144,7 +241,7 @@ function safeParse(raw: string): Partial<Settings> {
 // Stored as an array of epoch-ms timestamps, one per conversation.
 
 async function loadUsage(): Promise<number[]> {
-  const raw = await AsyncStorage.getItem(USAGE_KEY);
+  const raw = await readRaw(USAGE_FILE);
   if (!raw) return [];
   try {
     const arr = JSON.parse(raw);
@@ -155,7 +252,7 @@ async function loadUsage(): Promise<number[]> {
 }
 
 async function saveUsage(stamps: number[]): Promise<void> {
-  await AsyncStorage.setItem(USAGE_KEY, JSON.stringify(stamps));
+  await writeRaw(USAGE_FILE, JSON.stringify(stamps));
 }
 
 // Record one usage event now, pruning entries older than one hour.
@@ -177,9 +274,13 @@ export async function usageInLastHour(): Promise<number> {
 // The dev environment (.env.dev sets EXPO_PUBLIC_ENV=dev) and Debug builds are
 // exempt from the paywall — even in a standalone Release build. Only a real
 // production build (no dev flag) gates non-Pro users.
-const IS_DEV_ENV =
-  (process.env.EXPO_PUBLIC_ENV ?? '').toLowerCase() === 'dev' || __DEV__;
+const IS_DEV_ENV = (process.env.EXPO_PUBLIC_ENV ?? '').toLowerCase() === 'dev' || __DEV__;
 
 export function isPaywallActive(isPro: boolean): boolean {
   return !IS_DEV_ENV && !isPro;
+}
+
+// Whether the shared iCloud store is active right now (for a Settings indicator).
+export async function iCloudStatus(): Promise<{ linked: boolean; available: boolean }> {
+  return { linked: iCloud.isLinked(), available: await iCloud.isAvailable() };
 }

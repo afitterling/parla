@@ -241,6 +241,8 @@ export function DialogScreen({
         pinyin: s.pinyin,
         translation: s.translation,
         example: s.example,
+        examplePinyin: s.examplePinyin,
+        exampleTranslation: s.exampleTranslation,
         lang: goalLang.code,
       },
     ]);

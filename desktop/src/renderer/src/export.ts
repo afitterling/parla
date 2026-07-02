@@ -1,11 +1,8 @@
-// Export vocabulary and phrases to a shareable file. Two formats:
+// Export vocabulary and phrases to a downloadable file. Two formats:
 //   - CSV: a flat table (Anki / spreadsheet import). UTF-8 BOM-prefixed so Excel
 //     reads Chinese characters and Pinyin correctly.
 //   - JSON: the raw records, for backup / re-import.
-// Files are written into the cache directory (SDK 56 File API) and handed to the
-// native share sheet via expo-sharing.
-import { File, Paths } from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+// On desktop we trigger a normal browser download via an object URL.
 import { PhraseItem, VocabItem } from './storage';
 
 export type ExportFormat = 'csv' | 'json';
@@ -71,68 +68,32 @@ function phrasesToCsv(items: PhraseItem[]): string {
   return [csvRow(header), ...rows].join('\n');
 }
 
-// Write `content` to a fresh cache file and open the system share sheet.
-async function shareText(
-  filename: string,
-  content: string,
-  mimeType: string,
-  uti: string,
-  dialogTitle: string
-): Promise<void> {
-  if (!(await Sharing.isAvailableAsync())) {
-    throw new Error('Sharing is not available on this device.');
-  }
-  const file = new File(Paths.cache, filename);
-  if (file.exists) file.delete(); // overwrite any prior export of the same name
-  file.create();
-  file.write(content);
-  await Sharing.shareAsync(file.uri, { mimeType, UTI: uti, dialogTitle });
+// Trigger a browser download of `content` as `filename`.
+function download(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke on the next tick so the download has started.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function exportVocab(
-  items: VocabItem[],
-  lang: string,
-  format: ExportFormat,
-  dialogTitle: string
-): Promise<void> {
+export function exportVocab(items: VocabItem[], lang: string, format: ExportFormat): void {
   if (format === 'csv') {
-    return shareText(
-      `parla-vocab-${lang}.csv`,
-      BOM + vocabToCsv(items),
-      'text/csv',
-      'public.comma-separated-values-text',
-      dialogTitle
-    );
+    download(`parla-vocab-${lang}.csv`, BOM + vocabToCsv(items), 'text/csv');
+    return;
   }
-  return shareText(
-    `parla-vocab-${lang}.json`,
-    JSON.stringify(items, null, 2),
-    'application/json',
-    'public.json',
-    dialogTitle
-  );
+  download(`parla-vocab-${lang}.json`, JSON.stringify(items, null, 2), 'application/json');
 }
 
-export async function exportPhrases(
-  items: PhraseItem[],
-  lang: string,
-  format: ExportFormat,
-  dialogTitle: string
-): Promise<void> {
+export function exportPhrases(items: PhraseItem[], lang: string, format: ExportFormat): void {
   if (format === 'csv') {
-    return shareText(
-      `parla-phrases-${lang}.csv`,
-      BOM + phrasesToCsv(items),
-      'text/csv',
-      'public.comma-separated-values-text',
-      dialogTitle
-    );
+    download(`parla-phrases-${lang}.csv`, BOM + phrasesToCsv(items), 'text/csv');
+    return;
   }
-  return shareText(
-    `parla-phrases-${lang}.json`,
-    JSON.stringify(items, null, 2),
-    'application/json',
-    'public.json',
-    dialogTitle
-  );
+  download(`parla-phrases-${lang}.json`, JSON.stringify(items, null, 2), 'application/json');
 }

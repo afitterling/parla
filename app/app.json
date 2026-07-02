@@ -10,9 +10,28 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren."
+        "NSMicrophoneUsageDescription": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren.",
+        "NSUbiquitousContainers": {
+          "iCloud.com.afitterling.sprachapp": {
+            "NSUbiquitousContainerIsDocumentScopePublic": true,
+            "NSUbiquitousContainerName": "Parla",
+            "NSUbiquitousContainerSupportedFolderLevels": "Any"
+          }
+        }
       },
-      "bundleIdentifier": "com.afitterling.sprachapp"
+      "entitlements": {
+        "com.apple.developer.icloud-container-identifiers": [
+          "iCloud.com.afitterling.sprachapp"
+        ],
+        "com.apple.developer.icloud-services": [
+          "CloudDocuments"
+        ],
+        "com.apple.developer.ubiquity-container-identifiers": [
+          "iCloud.com.afitterling.sprachapp"
+        ]
+      },
+      "bundleIdentifier": "com.afitterling.sprachapp",
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {

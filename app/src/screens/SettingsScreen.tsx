@@ -10,6 +10,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
+import * as Clipboard from 'expo-clipboard';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { Settings } from '../storage';
@@ -45,6 +47,26 @@ export function SettingsScreen({
   const theme = useTheme();
   const t = useT();
   const [picker, setPicker] = useState<'input' | 'goal' | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // App / build info — baked in from app.json at build time (see scripts/setVersion.sh).
+  const appVersion = Constants.expoConfig?.version ?? '—';
+  const buildNumber = Constants.expoConfig?.ios?.buildNumber ?? '—';
+  const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? '—';
+  const systemInfo = `${Platform.OS} ${Platform.Version}`;
+  const debugRows: { label: string; value: string }[] = [
+    { label: 'Version', value: String(appVersion) },
+    { label: 'Build', value: String(buildNumber) },
+    { label: 'Bundle', value: String(bundleId) },
+    { label: 'System', value: systemInfo },
+  ];
+
+  async function copyDebug() {
+    await Clipboard.setStringAsync(debugRows.map((r) => `${r.label}: ${r.value}`).join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -180,6 +202,21 @@ export function SettingsScreen({
 
           <Text style={styles.hint}>{t('settings.proHint')}</Text>
         </View>
+
+        <Text style={styles.sectionLabel}>{t('settings.about').toUpperCase()}</Text>
+        <Pressable style={styles.card} onLongPress={copyDebug} delayLongPress={350}>
+          {debugRows.map((r) => (
+            <View key={r.label} style={styles.debugRow}>
+              <Text style={styles.debugKey}>{r.label}</Text>
+              <Text style={styles.debugVal} selectable>
+                {r.value}
+              </Text>
+            </View>
+          ))}
+          <Text style={styles.hint}>
+            {copied ? t('settings.copied') : t('settings.copyDebug')}
+          </Text>
+        </Pressable>
       </ScrollView>
 
       <LanguagePicker
@@ -257,6 +294,15 @@ function makeStyles(theme: Theme) {
     marginBottom: 12,
   },
   hint: { color: theme.colors.textFaint, fontSize: 12, marginTop: 10 },
+
+  debugRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  debugKey: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  debugVal: { color: theme.colors.text, fontSize: 13, fontWeight: '600' },
 
   status: { fontSize: 16, fontWeight: '800' },
   statusActive: { color: theme.colors.success },

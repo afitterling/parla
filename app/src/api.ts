@@ -100,6 +100,8 @@ export type VocabSuggestion = {
   pinyin?: string;
   translation: string;
   example?: string;
+  examplePinyin?: string; // transliteration of the example sentence
+  exampleTranslation?: string; // example sentence translated into the input language
 };
 
 export type DialogReply = {
@@ -141,7 +143,9 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-
   "vocab": [
     { "term": "<nützliches Wort/Wendung aus target auf ${goal.nativeName}>",${
       wantPinyin ? ' "pinyin": "<Umschrift von term>",' : ''
-    } "translation": "<Bedeutung auf ${input.nativeName}>", "example": "<kurzer Beispielsatz auf ${goal.nativeName}>" }
+    } "translation": "<Bedeutung auf ${input.nativeName}>", "example": "<kurzer Beispielsatz auf ${goal.nativeName}>",${
+      wantPinyin ? ' "examplePinyin": "<Umschrift des Beispielsatzes>",' : ''
+    } "exampleTranslation": "<Übersetzung des Beispielsatzes auf ${input.nativeName}>" }
   ]
 }
 
@@ -244,6 +248,8 @@ function parseDialogReply(text: string): DialogReply {
               pinyin: v.pinyin ? String(v.pinyin) : undefined,
               translation: String(v.translation ?? ''),
               example: v.example ? String(v.example) : undefined,
+              examplePinyin: v.examplePinyin ? String(v.examplePinyin) : undefined,
+              exampleTranslation: v.exampleTranslation ? String(v.exampleTranslation) : undefined,
             }))
         : [],
       raw: text,
@@ -251,6 +257,116 @@ function parseDialogReply(text: string): DialogReply {
   }
   // Fallback: model didn't return JSON — show the text as-is.
   return { target: text.trim(), translation: '', vocab: [], raw: text };
+}
+
+// ── Generate an example sentence for a saved vocabulary word ──────────────────
+// The Vocabulary screen uses this to enrich a word with a natural example
+// sentence, its transliteration (Pinyin/Romaji, when the goal language uses one),
+// and a translation into the learner's language.
+export type VocabExample = {
+  termPinyin?: string; // transliteration of the word itself (fills a missing word pinyin)
+  example: string;
+  examplePinyin?: string;
+  exampleTranslation?: string;
+};
+
+export async function generateVocabExample(
+  openaiKey: string,
+  term: string,
+  goalLang: Language,
+  inputLang: Language,
+  wantPinyin: boolean,
+  signal?: AbortSignal
+): Promise<VocabExample> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const termPinyinField = wantPinyin
+    ? `\n  "termPinyin": "<lateinische Umschrift/Transliteration des Wortes/der Wendung selbst>",`
+    : '';
+  const pinyinField = wantPinyin
+    ? `\n  "examplePinyin": "<lateinische Umschrift/Transliteration des Beispielsatzes als Lesehilfe>",`
+    : '';
+  const pinyinRule = wantPinyin
+    ? `\n- "termPinyin" und "examplePinyin": IMMER die lateinische Umschrift (des Wortes bzw. des Beispielsatzes) im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du bist ein Sprachlehrer für ${goalLang.label} (${goalLang.nativeName}). Bilde EINEN kurzen, natürlichen Beispielsatz für Anfänger, der das gegebene Wort bzw. die Wendung enthält.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${termPinyinField}
+  "example": "<kurzer Beispielsatz auf ${goalLang.nativeName}, der das Wort enthält>",${pinyinField}
+  "exampleTranslation": "<Übersetzung des Beispielsatzes auf ${inputLang.nativeName}>"
+}
+
+Regeln:
+- Der Satz MUSS das gegebene Wort/die Wendung enthalten.
+- Kurz, klar und auf Anfängerniveau.${pinyinRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const body = JSON.stringify({
+    model: CHAT_MODEL,
+    max_tokens: 300,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: term },
+    ],
+  });
+
+  let res: Response | null = null;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 60000);
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+        body,
+        signal: s,
+      });
+      done();
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
+    }
+  }
+  if (!res) {
+    throw new Error(
+      lastErr?.name === 'AbortError'
+        ? 'Zeitüberschreitung — Netzwerk langsam. Nochmal versuchen.'
+        : 'Netzwerkfehler — bitte nochmal versuchen.'
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const text: string = data?.choices?.[0]?.message?.content ?? '';
+  const json = extractJson(text);
+  if (!json || typeof json.example !== 'string' || !json.example.trim()) {
+    throw new Error('Kein Beispielsatz erhalten — bitte nochmal versuchen.');
+  }
+  return {
+    termPinyin:
+      wantPinyin && typeof json.termPinyin === 'string' && json.termPinyin.trim()
+        ? String(json.termPinyin).trim()
+        : undefined,
+    example: String(json.example).trim(),
+    examplePinyin:
+      wantPinyin && typeof json.examplePinyin === 'string' && json.examplePinyin.trim()
+        ? String(json.examplePinyin).trim()
+        : undefined,
+    exampleTranslation:
+      typeof json.exampleTranslation === 'string' && json.exampleTranslation.trim()
+        ? String(json.exampleTranslation).trim()
+        : undefined,
+  };
 }
 
 function extractJson(text: string): any | null {

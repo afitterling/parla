@@ -1,21 +1,19 @@
-// Parla — dark, energetic design tokens (shared look with the mobile app)
-export const theme = {
-  colors: {
-    bg: '#0B0B0F',
-    bgElevated: '#16161D',
-    card: '#1C1C26',
-    cardBorder: '#2A2A38',
-    text: '#F5F5F7',
-    textMuted: '#9A9AAB',
-    textFaint: '#6A6A7C',
-    accent: '#FF5C00',
-    accentDim: '#FF5C0022',
-    accent2: '#22D3EE',
-    accent2Dim: '#22D3EE22',
-    success: '#34D399',
-    danger: '#FF4D6D',
-  },
-  radius: { sm: 10, md: 16, lg: 22, pill: 999 },
-} as const;
+// Parla — theme resolution. The actual color values live as CSS custom
+// properties in index.css (`:root` = dark, `:root[data-theme="light"]` = light),
+// so components style via classNames and icons inherit `currentColor`. This
+// module only resolves which mode is active and applies it to <html>.
+export type ThemeMode = 'light' | 'dark';
+export type ThemeSetting = 'light' | 'dark' | 'system';
 
-export type Theme = typeof theme;
+// 'system' follows the OS scheme; anything else is taken literally. Defaults to
+// dark when the OS scheme is unknown.
+export function resolveThemeMode(setting: ThemeSetting, systemPrefersDark: boolean): ThemeMode {
+  if (setting === 'light' || setting === 'dark') return setting;
+  return systemPrefersDark ? 'dark' : 'light';
+}
+
+// Apply the resolved mode to the document root so the CSS variables switch.
+export function applyThemeMode(mode: ThemeMode): void {
+  document.documentElement.dataset.theme = mode;
+  document.documentElement.style.colorScheme = mode;
+}

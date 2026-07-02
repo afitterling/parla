@@ -8,6 +8,7 @@
     "expo": "~56.0.12",
     "expo-audio": "~56.0.12",
     "expo-clipboard": "~56.0.4",
+    "expo-constants": "~56.0.18",
     "expo-file-system": "~56.0.8",
     "expo-localization": "~56.0.6",
     "expo-sharing": "~56.0.18",
@@ -25,7 +26,10 @@
     "start": "dotenv -e .env.dev -- expo start",
     "android": "dotenv -e .env.dev -- expo start --android",
     "ios": "dotenv -e .env.dev -- expo start --ios",
-    "web": "dotenv -e .env.dev -- expo start --web"
+    "web": "dotenv -e .env.dev -- expo start --web",
+    "setVersion": "./scripts/setVersion.sh",
+    "xcode": "./scripts/run-xcode.sh",
+    "release": "./scripts/release-device.sh"
   },
   "private": true
 }

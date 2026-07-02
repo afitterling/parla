@@ -3,7 +3,6 @@
 // German is the source of truth; the other five languages are translated from it.
 // Every user-facing UI string lives here keyed by a stable dotted key. Use
 // `makeT(lang)` (or the `useT()` hook from I18nContext) to look strings up.
-import { getLocales } from 'expo-localization';
 
 export type UiLang = 'de' | 'en' | 'zh' | 'zh-TW' | 'id' | 'ms';
 
@@ -38,10 +37,6 @@ const de: Record<string, string> = {
   'langPicker.search': 'Sprache suchen …',
   'langPicker.noMatch': 'Keine Sprache gefunden',
   'vocab.copy': 'Kopieren',
-  'common.ok': 'OK',
-  'vocab.genExample': 'Beispiel erzeugen',
-  'vocab.genAllConfirm': 'Für {count} Wörter ohne Beispiel jetzt Beispielsätze erzeugen?',
-  'vocab.genFailed': '{count} Beispiele konnten nicht erzeugt werden.',
   'vocab.tag': 'Tag',
   'alert.proTitle': 'Parla Pro',
   'alert.purchaseSimulated': 'Kauf simuliert — Parla Pro ist aktiv.',
@@ -112,7 +107,7 @@ const de: Record<string, string> = {
   'train.noTranslation': '(keine Übersetzung)',
   'train.native': 'MUTTERSPRACHE',
   'train.targetLang': 'ZIELSPRACHE',
-  'train.tapToReveal': 'Tippen zum Auflösen',
+  'train.tapToReveal': 'Klicken zum Auflösen',
   'train.reveal': 'Auflösen',
   'train.againBtn': 'Nochmal',
   'train.knownBtn': 'Gewusst',
@@ -134,15 +129,17 @@ const de: Record<string, string> = {
   'settings.restorePurchases': 'Käufe wiederherstellen',
   'settings.proHint': 'Echte Abos benötigen App-Store-Einrichtung.',
   'settings.about': 'App-Info',
-  'settings.copyDebug': 'Zum Kopieren gedrückt halten',
+  'settings.copyDebug': 'Klicken zum Kopieren',
   'settings.copied': 'Kopiert ✓',
+  'settings.dataDir': 'Datenordner',
+  'settings.dataHint': 'Vokabeln, Phrasen & Einstellungen werden hier gespeichert (iCloud Drive).',
   // paywall
   'paywall.title': 'Limit erreicht',
   'paywall.text':
     'Im Gratis-Tarif sind 5 Gespräche pro Stunde möglich. Für unbegrenzte Gespräche upgrade auf Parla Pro.',
   'paywall.upgrade': 'Auf Parla Pro upgraden',
   'paywall.later': 'Vielleicht später',
-  // swipe actions
+  // row actions
   'swipe.learn': 'Lernen',
   'swipe.delete': 'Löschen',
   // tag modal
@@ -174,10 +171,6 @@ const en: Record<string, string> = {
   'langPicker.search': 'Search language …',
   'langPicker.noMatch': 'No language found',
   'vocab.copy': 'Copy',
-  'common.ok': 'OK',
-  'vocab.genExample': 'Generate example',
-  'vocab.genAllConfirm': 'Generate example sentences for {count} words without one?',
-  'vocab.genFailed': 'Could not generate {count} example(s).',
   'vocab.tag': 'Tag',
   'alert.proTitle': 'Parla Pro',
   'alert.purchaseSimulated': 'Purchase simulated — Parla Pro is active.',
@@ -196,7 +189,7 @@ const en: Record<string, string> = {
   'dialog.readyFree': 'Say something — Parla instantly translates it into {goal}.',
   'dialog.startConversation': 'Start conversation',
   'dialog.inputPlaceholder': 'Type or use the mic …',
-  'dialog.recHint': 'Recording — tap again to stop',
+  'dialog.recHint': 'Recording — click again to stop',
   'dialog.savePhrase': 'Save phrase',
   'dialog.phraseSaved': 'Phrase saved — tag it:',
   'dialog.newTag': 'new tag',
@@ -220,7 +213,7 @@ const en: Record<string, string> = {
   'phrase.list': 'List',
   'phrase.training': 'Training',
   'phrase.emptyText':
-    'No phrases yet. In the dialog, tap "Save phrase" on a Parla reply.',
+    'No phrases yet. In the dialog, click "Save phrase" on a Parla reply.',
   'phrase.searchPlaceholder': 'Search phrases …',
   'phrase.latest': 'Latest',
   'phrase.byTag': 'By tag',
@@ -244,7 +237,7 @@ const en: Record<string, string> = {
   'train.noTranslation': '(no translation)',
   'train.native': 'NATIVE',
   'train.targetLang': 'TARGET',
-  'train.tapToReveal': 'Tap to reveal',
+  'train.tapToReveal': 'Click to reveal',
   'train.reveal': 'Reveal',
   'train.againBtn': 'Again',
   'train.knownBtn': 'Knew it',
@@ -265,8 +258,10 @@ const en: Record<string, string> = {
   'settings.restorePurchases': 'Restore purchases',
   'settings.proHint': 'Real subscriptions require App Store setup.',
   'settings.about': 'App info',
-  'settings.copyDebug': 'Long-press to copy',
+  'settings.copyDebug': 'Click to copy',
   'settings.copied': 'Copied ✓',
+  'settings.dataDir': 'Data folder',
+  'settings.dataHint': 'Vocabulary, phrases & settings are stored here (iCloud Drive).',
   'paywall.title': 'Limit reached',
   'paywall.text':
     'The free tier allows 5 conversations per hour. Upgrade to Parla Pro for unlimited conversations.',
@@ -302,10 +297,6 @@ const zh: Record<string, string> = {
   'langPicker.search': '搜索语言 …',
   'langPicker.noMatch': '未找到语言',
   'vocab.copy': '复制',
-  'common.ok': '确定',
-  'vocab.genExample': '生成例句',
-  'vocab.genAllConfirm': '为 {count} 个没有例句的单词生成例句吗？',
-  'vocab.genFailed': '{count} 个例句生成失败。',
   'vocab.tag': '标签',
   'alert.proTitle': 'Parla Pro',
   'alert.purchaseSimulated': '已模拟购买 — Parla Pro 已启用。',
@@ -391,8 +382,10 @@ const zh: Record<string, string> = {
   'settings.restorePurchases': '恢复购买',
   'settings.proHint': '真实订阅需要 App Store 配置。',
   'settings.about': '应用信息',
-  'settings.copyDebug': '长按复制',
+  'settings.copyDebug': '点击复制',
   'settings.copied': '已复制 ✓',
+  'settings.dataDir': '数据文件夹',
+  'settings.dataHint': '词汇、短语和设置保存在此处（iCloud Drive）。',
   'paywall.title': '已达上限',
   'paywall.text': '免费版每小时可进行 5 次对话。升级到 Parla Pro 即可无限对话。',
   'paywall.upgrade': '升级到 Parla Pro',
@@ -402,6 +395,9 @@ const zh: Record<string, string> = {
   'tagModal.title': '标签',
   'tagModal.newTag': '新标签',
   'tagModal.close': '完成',
+  'tagModal.removeTitle': '移除标签？',
+  'tagModal.removeMsg': '从此短语移除"{tag}"？',
+  'tagModal.remove': '移除',
 };
 
 const zhTW: Record<string, string> = {
@@ -424,10 +420,6 @@ const zhTW: Record<string, string> = {
   'langPicker.search': '搜尋語言 …',
   'langPicker.noMatch': '未找到語言',
   'vocab.copy': '複製',
-  'common.ok': '確定',
-  'vocab.genExample': '生成例句',
-  'vocab.genAllConfirm': '為 {count} 個沒有例句的單詞生成例句嗎？',
-  'vocab.genFailed': '{count} 個例句生成失敗。',
   'vocab.tag': '標籤',
   'alert.proTitle': 'Parla Pro',
   'alert.purchaseSimulated': '已模擬購買 — Parla Pro 已啟用。',
@@ -513,8 +505,10 @@ const zhTW: Record<string, string> = {
   'settings.restorePurchases': '還原購買',
   'settings.proHint': '真實訂閱需要 App Store 設定。',
   'settings.about': '應用程式資訊',
-  'settings.copyDebug': '長按複製',
+  'settings.copyDebug': '點擊複製',
   'settings.copied': '已複製 ✓',
+  'settings.dataDir': '資料夾',
+  'settings.dataHint': '詞彙、短句和設定儲存於此（iCloud Drive）。',
   'paywall.title': '已達上限',
   'paywall.text': '免費版每小時可進行 5 次對話。升級到 Parla Pro 即可無限對話。',
   'paywall.upgrade': '升級到 Parla Pro',
@@ -524,6 +518,9 @@ const zhTW: Record<string, string> = {
   'tagModal.title': '標籤',
   'tagModal.newTag': '新標籤',
   'tagModal.close': '完成',
+  'tagModal.removeTitle': '移除標籤？',
+  'tagModal.removeMsg': '從此短句移除「{tag}」？',
+  'tagModal.remove': '移除',
 };
 
 const id: Record<string, string> = {
@@ -546,10 +543,6 @@ const id: Record<string, string> = {
   'langPicker.search': 'Cari bahasa …',
   'langPicker.noMatch': 'Bahasa tidak ditemukan',
   'vocab.copy': 'Salin',
-  'common.ok': 'OK',
-  'vocab.genExample': 'Buat contoh',
-  'vocab.genAllConfirm': 'Buat kalimat contoh untuk {count} kata yang belum punya?',
-  'vocab.genFailed': 'Gagal membuat {count} contoh.',
   'vocab.tag': 'Tag',
   'alert.proTitle': 'Parla Pro',
   'alert.purchaseSimulated': 'Pembelian disimulasikan — Parla Pro aktif.',
@@ -568,7 +561,7 @@ const id: Record<string, string> = {
   'dialog.readyFree': 'Katakan sesuatu — Parla langsung menerjemahkannya ke {goal}.',
   'dialog.startConversation': 'Mulai percakapan',
   'dialog.inputPlaceholder': 'Ketik atau gunakan mikrofon …',
-  'dialog.recHint': 'Merekam — ketuk lagi untuk berhenti',
+  'dialog.recHint': 'Merekam — klik lagi untuk berhenti',
   'dialog.savePhrase': 'Simpan frasa',
   'dialog.phraseSaved': 'Frasa disimpan — beri tag:',
   'dialog.newTag': 'tag baru',
@@ -591,7 +584,7 @@ const id: Record<string, string> = {
   'phrase.many': 'frasa',
   'phrase.list': 'Daftar',
   'phrase.training': 'Latihan',
-  'phrase.emptyText': 'Belum ada frasa. Di dialog, ketuk "Simpan frasa" pada balasan Parla.',
+  'phrase.emptyText': 'Belum ada frasa. Di dialog, klik "Simpan frasa" pada balasan Parla.',
   'phrase.searchPlaceholder': 'Cari frasa …',
   'phrase.latest': 'Terbaru',
   'phrase.byTag': 'Per tag',
@@ -615,7 +608,7 @@ const id: Record<string, string> = {
   'train.noTranslation': '(tanpa terjemahan)',
   'train.native': 'ASAL',
   'train.targetLang': 'TARGET',
-  'train.tapToReveal': 'Ketuk untuk melihat',
+  'train.tapToReveal': 'Klik untuk melihat',
   'train.reveal': 'Lihat jawaban',
   'train.againBtn': 'Ulangi',
   'train.knownBtn': 'Tahu',
@@ -636,8 +629,10 @@ const id: Record<string, string> = {
   'settings.restorePurchases': 'Pulihkan pembelian',
   'settings.proHint': 'Langganan asli memerlukan pengaturan App Store.',
   'settings.about': 'Info aplikasi',
-  'settings.copyDebug': 'Tekan lama untuk menyalin',
+  'settings.copyDebug': 'Klik untuk menyalin',
   'settings.copied': 'Disalin ✓',
+  'settings.dataDir': 'Folder data',
+  'settings.dataHint': 'Kosakata, frasa & pengaturan disimpan di sini (iCloud Drive).',
   'paywall.title': 'Batas tercapai',
   'paywall.text':
     'Paket gratis memungkinkan 5 percakapan per jam. Tingkatkan ke Parla Pro untuk percakapan tanpa batas.',
@@ -648,6 +643,9 @@ const id: Record<string, string> = {
   'tagModal.title': 'Tag',
   'tagModal.newTag': 'Tag baru',
   'tagModal.close': 'Selesai',
+  'tagModal.removeTitle': 'Hapus tag?',
+  'tagModal.removeMsg': 'Hapus „{tag}" dari frasa ini?',
+  'tagModal.remove': 'Hapus',
 };
 
 const ms: Record<string, string> = {
@@ -670,10 +668,6 @@ const ms: Record<string, string> = {
   'langPicker.search': 'Cari bahasa …',
   'langPicker.noMatch': 'Bahasa tidak dijumpai',
   'vocab.copy': 'Salin',
-  'common.ok': 'OK',
-  'vocab.genExample': 'Jana contoh',
-  'vocab.genAllConfirm': 'Jana ayat contoh untuk {count} perkataan yang belum ada?',
-  'vocab.genFailed': 'Gagal menjana {count} contoh.',
   'vocab.tag': 'Tag',
   'alert.proTitle': 'Parla Pro',
   'alert.purchaseSimulated': 'Pembelian disimulasi — Parla Pro aktif.',
@@ -692,7 +686,7 @@ const ms: Record<string, string> = {
   'dialog.readyFree': 'Katakan sesuatu — Parla terus menterjemahkannya ke {goal}.',
   'dialog.startConversation': 'Mulakan perbualan',
   'dialog.inputPlaceholder': 'Taip atau guna mikrofon …',
-  'dialog.recHint': 'Merakam — ketik lagi untuk berhenti',
+  'dialog.recHint': 'Merakam — klik lagi untuk berhenti',
   'dialog.savePhrase': 'Simpan frasa',
   'dialog.phraseSaved': 'Frasa disimpan — beri tag:',
   'dialog.newTag': 'tag baharu',
@@ -715,7 +709,7 @@ const ms: Record<string, string> = {
   'phrase.many': 'frasa',
   'phrase.list': 'Senarai',
   'phrase.training': 'Latihan',
-  'phrase.emptyText': 'Belum ada frasa. Dalam dialog, ketik "Simpan frasa" pada balasan Parla.',
+  'phrase.emptyText': 'Belum ada frasa. Dalam dialog, klik "Simpan frasa" pada balasan Parla.',
   'phrase.searchPlaceholder': 'Cari frasa …',
   'phrase.latest': 'Terkini',
   'phrase.byTag': 'Mengikut tag',
@@ -739,7 +733,7 @@ const ms: Record<string, string> = {
   'train.noTranslation': '(tiada terjemahan)',
   'train.native': 'ASAL',
   'train.targetLang': 'SASARAN',
-  'train.tapToReveal': 'Ketik untuk lihat',
+  'train.tapToReveal': 'Klik untuk lihat',
   'train.reveal': 'Lihat jawapan',
   'train.againBtn': 'Ulang',
   'train.knownBtn': 'Tahu',
@@ -760,8 +754,10 @@ const ms: Record<string, string> = {
   'settings.restorePurchases': 'Pulihkan pembelian',
   'settings.proHint': 'Langganan sebenar memerlukan persediaan App Store.',
   'settings.about': 'Maklumat apl',
-  'settings.copyDebug': 'Tekan lama untuk menyalin',
+  'settings.copyDebug': 'Klik untuk menyalin',
   'settings.copied': 'Disalin ✓',
+  'settings.dataDir': 'Folder data',
+  'settings.dataHint': 'Kosa kata, frasa & tetapan disimpan di sini (iCloud Drive).',
   'paywall.title': 'Had dicapai',
   'paywall.text':
     'Pelan percuma membenarkan 5 perbualan sejam. Naik taraf ke Parla Pro untuk perbualan tanpa had.',
@@ -772,6 +768,9 @@ const ms: Record<string, string> = {
   'tagModal.title': 'Tag',
   'tagModal.newTag': 'Tag baharu',
   'tagModal.close': 'Selesai',
+  'tagModal.removeTitle': 'Alih keluar tag?',
+  'tagModal.removeMsg': 'Alih keluar „{tag}" dari frasa ini?',
+  'tagModal.remove': 'Alih keluar',
 };
 
 const T: Record<UiLang, Record<string, string>> = {
@@ -794,19 +793,14 @@ export function makeT(lang: UiLang) {
 export type TFn = ReturnType<typeof makeT>;
 
 // Resolve a stored UI-language setting into a concrete UiLang. The special
-// value 'auto' (or any unknown value) falls back to the device locale.
+// value 'auto' (or any unknown value) falls back to the browser locale.
 export function resolveUiLang(setting: string): UiLang {
   if (UI_LANGS.some((l) => l.code === setting)) return setting as UiLang;
-  const loc = getLocales()[0];
-  const tag = (loc?.languageTag ?? '').toLowerCase();
-  const code = (loc?.languageCode ?? '').toLowerCase();
-  const region = (loc?.regionCode ?? '').toUpperCase();
-  const script = (loc?.languageScriptCode ?? '').toLowerCase();
+  const tag = (navigator.language || '').toLowerCase();
+  const code = tag.split('-')[0];
   if (code === 'zh') {
     const traditional =
-      script === 'hant' ||
       tag.includes('hant') ||
-      ['TW', 'HK', 'MO'].includes(region) ||
       tag.includes('-tw') ||
       tag.includes('-hk') ||
       tag.includes('-mo');
