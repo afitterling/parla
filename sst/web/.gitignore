@@ -1,0 +1,11 @@
+node_modules
+
+/.cache
+/build
+.env
+.DS_Store
+
+# SST working dir. Note: sst-env.d.ts is intentionally NOT ignored while this is
+# a scaffold — it is hand-written so typecheck passes without deploying. Once
+# `sst dev` runs and generates it for real, ignore it instead.
+.sst
