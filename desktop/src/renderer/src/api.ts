@@ -243,6 +243,113 @@ function parseDialogReply(text: string): DialogReply {
   return { target: text.trim(), translation: '', vocab: [], raw: text };
 }
 
+// ── Break a sentence into its individual words/terms ─────────────────────────
+// The dialogue offers a "word for word" action on a translated sentence: it
+// segments the goal-language sentence into its meaningful words/expressions so
+// the learner can add each one to the dictionary. Runs through the same chat
+// endpoint. Segmentation is done by the model (not a client-side split) so it
+// also works for scripts without spaces (Chinese, Japanese, Thai …).
+export async function breakdownSentence(
+  openaiKey: string,
+  sentence: string,
+  goalLang: Language,
+  inputLang: Language,
+  wantPinyin: boolean,
+  signal?: AbortSignal
+): Promise<VocabSuggestion[]> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+  if (!sentence.trim()) return [];
+
+  const pinyinField = wantPinyin
+    ? ' "pinyin": "<lateinische Umschrift/Transliteration des Wortes>",'
+    : '';
+  const pinyinRule = wantPinyin
+    ? `\n- "pinyin": IMMER die lateinische Umschrift jedes Wortes im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+
+  const system = `Du bist ein Sprachlehrer für ${goalLang.label} (${goalLang.nativeName}). Zerlege den gegebenen Satz auf ${goalLang.nativeName} in seine einzelnen sinntragenden Wörter und Wendungen – in der Reihenfolge, in der sie im Satz vorkommen.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{
+  "words": [
+    { "term": "<einzelnes Wort/Wendung aus dem Satz auf ${goalLang.nativeName}>",${pinyinField} "translation": "<Bedeutung auf ${inputLang.nativeName}>" }
+  ]
+}
+
+Regeln:
+- Ein Eintrag pro sinntragendem Wort bzw. fester Wendung, in Satzreihenfolge.
+- Bei Sprachen ohne Leerzeichen (z.B. Chinesisch, Japanisch, Thai) korrekt in Wörter segmentieren.
+- "term": nenne die Wörterbuch-/Grundform, wo sinnvoll (z.B. Verb im Infinitiv, Nomen im Nominativ Singular).
+- Lasse reine Satzzeichen weg. Wiederhole identische Wörter nicht.${pinyinRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const body = JSON.stringify({
+    model: CHAT_MODEL,
+    max_tokens: 900,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: sentence },
+    ],
+  });
+
+  let res: Response | null = null;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 60000);
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+        body,
+        signal: s,
+      });
+      done();
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
+    }
+  }
+  if (!res) {
+    throw new Error(
+      lastErr?.name === 'AbortError'
+        ? 'Zeitüberschreitung — Netzwerk langsam. Nochmal versuchen.'
+        : 'Netzwerkfehler — bitte nochmal versuchen.'
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const text: string = data?.choices?.[0]?.message?.content ?? '';
+  const json = extractJson(text);
+  const words = Array.isArray(json?.words) ? json.words : [];
+  const seen = new Set<string>();
+  const out: VocabSuggestion[] = [];
+  for (const w of words) {
+    if (!w || typeof w.term !== 'string') continue;
+    const term = w.term.trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      term,
+      pinyin: wantPinyin && w.pinyin ? String(w.pinyin).trim() || undefined : undefined,
+      translation: String(w.translation ?? '').trim(),
+    });
+  }
+  if (out.length === 0) throw new Error('Konnte den Satz nicht zerlegen — bitte nochmal versuchen.');
+  return out;
+}
+
 function extractJson(text: string): any | null {
   // Tolerate code fences or stray prose around the JSON object.
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);

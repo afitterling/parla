@@ -28,6 +28,7 @@ import { Paywall } from '../components/Paywall';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import {
+  breakdownSentence,
   chatWithAI,
   ChatTurn,
   DialogReply,
@@ -254,6 +255,40 @@ export function DialogScreen({
     setSaved((prev) => new Set(prev).add(text));
   }
 
+  // Break a translated sentence into its individual words/terms so each can be
+  // added to the dictionary. Runs its own request (own AbortController) so it
+  // doesn't interfere with an in-flight dialogue turn.
+  async function breakdown(text: string): Promise<VocabSuggestion[]> {
+    const ctrl = new AbortController();
+    return breakdownSentence(
+      settings.openaiKey,
+      text,
+      goalLang,
+      inputLang,
+      wantPinyin,
+      ctrl.signal
+    );
+  }
+
+  // Save several dissected words at once ("add all").
+  function saveMany(items: VocabSuggestion[]) {
+    const fresh = items.filter((s) => !saved.has(s.term));
+    if (fresh.length === 0) return;
+    onAddVocab(
+      fresh.map((s) => ({
+        term: s.term,
+        pinyin: s.pinyin,
+        translation: s.translation,
+        lang: goalLang.code,
+      }))
+    );
+    setSaved((prev) => {
+      const next = new Set(prev);
+      fresh.forEach((s) => next.add(s.term));
+      return next;
+    });
+  }
+
   const recording = recorder.state === 'recording';
   const disabled = busy !== null;
 
@@ -376,6 +411,8 @@ export function DialogScreen({
               key={m.id}
               msg={m}
               onSaveVocab={saveSuggestion}
+              onSaveMany={saveMany}
+              onBreakdown={breakdown}
               saved={saved}
               langCode={goalLang.code}
               onAddPhrase={onAddPhrase}
@@ -473,6 +510,8 @@ function SegBtn({
 function AiBubble({
   msg,
   onSaveVocab,
+  onSaveMany,
+  onBreakdown,
   saved,
   langCode,
   onAddPhrase,
@@ -481,6 +520,8 @@ function AiBubble({
 }: {
   msg: Msg;
   onSaveVocab: (s: VocabSuggestion) => void;
+  onSaveMany: (items: VocabSuggestion[]) => void;
+  onBreakdown: (text: string) => Promise<VocabSuggestion[]>;
   saved: Set<string>;
   langCode: string;
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
@@ -494,6 +535,23 @@ function AiBubble({
   const [tags, setTags] = useState<string[]>([]);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
+  // Word-by-word breakdown state (lazy: only fetched when the user asks).
+  const [words, setWords] = useState<VocabSuggestion[] | null>(null);
+  const [breaking, setBreaking] = useState(false);
+  const [breakError, setBreakError] = useState<string | null>(null);
+
+  async function runBreakdown() {
+    if (breaking) return;
+    setBreakError(null);
+    setBreaking(true);
+    try {
+      setWords(await onBreakdown(msg.text));
+    } catch (e: any) {
+      setBreakError(e?.message ?? t('dialog.breakdownError'));
+    } finally {
+      setBreaking(false);
+    }
+  }
 
   function savePhrase() {
     const id = onAddPhrase({
@@ -562,6 +620,63 @@ function AiBubble({
           })}
         </View>
       )}
+
+      {/* Word-by-word: dissect the sentence so each term can be saved */}
+      <View style={styles.breakdownArea}>
+        {words === null ? (
+          <Pressable
+            style={styles.breakdownBtn}
+            onPress={runBreakdown}
+            disabled={breaking}
+          >
+            {breaking ? (
+              <ActivityIndicator size="small" color={theme.colors.accent} />
+            ) : (
+              <Ionicons name="git-branch-outline" size={16} color={theme.colors.accent} />
+            )}
+            <Text style={styles.breakdownBtnText}>
+              {breaking ? t('dialog.breakdownLoading') : t('dialog.breakdown')}
+            </Text>
+          </Pressable>
+        ) : (
+          <View>
+            <View style={styles.breakdownHeader}>
+              <Text style={styles.breakdownLabel}>{t('dialog.breakdownTitle')}</Text>
+              {words.some((w) => !saved.has(w.term)) && (
+                <Pressable onPress={() => onSaveMany(words)} hitSlop={6}>
+                  <Text style={styles.breakdownAddAll}>{t('dialog.addAll')}</Text>
+                </Pressable>
+              )}
+            </View>
+            <View style={styles.vocabRow}>
+              {words.map((w, i) => {
+                const isSaved = saved.has(w.term);
+                return (
+                  <Pressable
+                    key={`${w.term}-${i}`}
+                    style={[styles.vocabChip, isSaved && styles.vocabChipSaved]}
+                    onPress={() => !isSaved && onSaveVocab(w)}
+                  >
+                    <Text style={styles.vocabChipTerm}>{w.term}</Text>
+                    {!!w.pinyin && <Text style={styles.vocabChipPinyin}>{w.pinyin}</Text>}
+                    <Text style={styles.vocabChipTrans}>
+                      {w.translation}{' '}
+                      <Ionicons
+                        name={isSaved ? 'checkmark' : 'add'}
+                        size={12}
+                        color={isSaved ? theme.colors.success : theme.colors.textMuted}
+                      />
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
+        {!!breakError && (
+          <Text style={styles.breakdownError}>{breakError}</Text>
+        )}
+      </View>
 
       <View style={styles.phraseArea}>
         {phraseId === null ? (
@@ -788,7 +903,14 @@ function makeStyles(theme: Theme) {
   userSave: { color: theme.colors.accent2, fontSize: 12, fontWeight: '700' },
   userSaveDone: { color: theme.colors.success },
 
-  vocabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  vocabRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignContent: 'flex-start',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+  },
   vocabChip: {
     backgroundColor: theme.colors.accentDim,
     borderWidth: 1,
@@ -799,7 +921,31 @@ function makeStyles(theme: Theme) {
   },
   vocabChipSaved: { borderColor: theme.colors.success, backgroundColor: '#34D39922' },
   vocabChipTerm: { color: theme.colors.text, fontWeight: '700', fontSize: 14 },
+  vocabChipPinyin: { color: theme.colors.accent2, fontSize: 10, marginTop: 1 },
   vocabChipTrans: { color: theme.colors.textMuted, fontSize: 11, marginTop: 1 },
+
+  breakdownArea: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.cardBorder,
+  },
+  breakdownBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+  breakdownBtnText: { color: theme.colors.accent, fontSize: 13, fontWeight: '800' },
+  breakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  breakdownLabel: {
+    color: theme.colors.textFaint,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  breakdownAddAll: { color: theme.colors.accent, fontSize: 12, fontWeight: '800' },
+  breakdownError: { color: theme.colors.danger, fontSize: 12, marginTop: 8 },
 
   phraseArea: {
     marginTop: 12,

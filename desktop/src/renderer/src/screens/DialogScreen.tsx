@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Plus,
   Check,
+  GitBranch,
 } from 'lucide-react';
 import {
   FREE_PER_HOUR,
@@ -29,7 +30,14 @@ import { useRecorder } from '../recorder';
 import { Paywall } from '../components/Paywall';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
-import { chatWithAI, ChatTurn, DialogReply, transcribeAudio, VocabSuggestion } from '../api';
+import {
+  breakdownSentence,
+  chatWithAI,
+  ChatTurn,
+  DialogReply,
+  transcribeAudio,
+  VocabSuggestion,
+} from '../api';
 
 type Mode = 'ask' | 'free';
 
@@ -234,6 +242,40 @@ export function DialogScreen({
     setSaved((prev) => new Set(prev).add(text));
   }
 
+  // Break a translated sentence into its individual words/terms so each can be
+  // added to the dictionary. Runs its own request (own AbortController) so it
+  // doesn't interfere with an in-flight dialogue turn.
+  async function breakdown(text: string): Promise<VocabSuggestion[]> {
+    const ctrl = new AbortController();
+    return breakdownSentence(
+      settings.openaiKey,
+      text,
+      goalLang,
+      inputLang,
+      wantPinyin,
+      ctrl.signal
+    );
+  }
+
+  // Save several dissected words at once ("add all").
+  function saveMany(items: VocabSuggestion[]) {
+    const fresh = items.filter((s) => !saved.has(s.term));
+    if (fresh.length === 0) return;
+    onAddVocab(
+      fresh.map((s) => ({
+        term: s.term,
+        pinyin: s.pinyin,
+        translation: s.translation,
+        lang: goalLang.code,
+      }))
+    );
+    setSaved((prev) => {
+      const next = new Set(prev);
+      fresh.forEach((s) => next.add(s.term));
+      return next;
+    });
+  }
+
   const recording = recorder.state === 'recording';
   const disabled = busy !== null;
 
@@ -328,6 +370,8 @@ export function DialogScreen({
               key={m.id}
               msg={m}
               onSaveVocab={saveSuggestion}
+              onSaveMany={saveMany}
+              onBreakdown={breakdown}
               saved={saved}
               langCode={goalLang.code}
               onAddPhrase={onAddPhrase}
@@ -397,6 +441,8 @@ export function DialogScreen({
 function AiBubble({
   msg,
   onSaveVocab,
+  onSaveMany,
+  onBreakdown,
   saved,
   langCode,
   onAddPhrase,
@@ -405,6 +451,8 @@ function AiBubble({
 }: {
   msg: Msg;
   onSaveVocab: (s: VocabSuggestion) => void;
+  onSaveMany: (items: VocabSuggestion[]) => void;
+  onBreakdown: (text: string) => Promise<VocabSuggestion[]>;
   saved: Set<string>;
   langCode: string;
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
@@ -416,6 +464,23 @@ function AiBubble({
   const [tags, setTags] = useState<string[]>([]);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
+  // Word-by-word breakdown state (lazy: only fetched when the user asks).
+  const [words, setWords] = useState<VocabSuggestion[] | null>(null);
+  const [breaking, setBreaking] = useState(false);
+  const [breakError, setBreakError] = useState<string | null>(null);
+
+  async function runBreakdown() {
+    if (breaking) return;
+    setBreakError(null);
+    setBreaking(true);
+    try {
+      setWords(await onBreakdown(msg.text));
+    } catch (e: any) {
+      setBreakError(e?.message ?? t('dialog.breakdownError'));
+    } finally {
+      setBreaking(false);
+    }
+  }
 
   function savePhrase() {
     const id = onAddPhrase({
@@ -478,6 +543,46 @@ function AiBubble({
           })}
         </div>
       )}
+
+      {/* Word-by-word: dissect the sentence so each term can be saved */}
+      <div className="breakdown-area">
+        {words === null ? (
+          <button className="link-btn ink" onClick={runBreakdown} disabled={breaking}>
+            {breaking ? <span className="spinner" /> : <GitBranch size={16} />}
+            {breaking ? t('dialog.breakdownLoading') : t('dialog.breakdown')}
+          </button>
+        ) : (
+          <div>
+            <div className="breakdown-head">
+              <span className="breakdown-label">{t('dialog.breakdownTitle')}</span>
+              {words.some((w) => !saved.has(w.term)) && (
+                <button className="breakdown-addall" onClick={() => onSaveMany(words)}>
+                  {t('dialog.addAll')}
+                </button>
+              )}
+            </div>
+            <div className="vocab-row">
+              {words.map((w, i) => {
+                const isSaved = saved.has(w.term);
+                return (
+                  <button
+                    key={`${w.term}-${i}`}
+                    className={`vchip${isSaved ? ' saved' : ''}`}
+                    onClick={() => !isSaved && onSaveVocab(w)}
+                  >
+                    <span className="term">{w.term}</span>
+                    {!!w.pinyin && <span className="vchip-pinyin">{w.pinyin}</span>}
+                    <span className="vt">
+                      {w.translation} {isSaved ? <Check size={12} /> : <Plus size={12} />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {!!breakError && <div className="breakdown-error">{breakError}</div>}
+      </div>
 
       <div className="tagarea">
         {phraseId === null ? (

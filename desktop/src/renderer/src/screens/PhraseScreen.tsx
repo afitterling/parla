@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Languages, List, GraduationCap, Trophy, RefreshCw, Check, X } from 'lucide-react';
+import {
+  Languages,
+  List,
+  GraduationCap,
+  Trophy,
+  RefreshCw,
+  Check,
+  X,
+  PencilLine,
+} from 'lucide-react';
 import { PhraseItem, Settings, recentTags } from '../storage';
 import { exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { Row } from '../components/Row';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
+import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { ExportMenu } from '../components/ExportMenu';
 import { useT } from '../i18n/I18nContext';
 
@@ -17,7 +27,7 @@ type Props = {
   tagSuggestions: string[];
 };
 
-type View2 = 'list' | 'train';
+type View2 = 'list' | 'train' | 'quiz';
 
 export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
   const t = useT();
@@ -68,9 +78,19 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
           <GraduationCap size={15} />
           {t('phrase.training')}
         </button>
+        <button
+          className={`seg-btn${view === 'quiz' ? ' active' : ''}`}
+          onClick={() => {
+            setLearnPhrase(null);
+            setView('quiz');
+          }}
+        >
+          <PencilLine size={15} />
+          {t('quiz.tab')}
+        </button>
       </div>
 
-      {view === 'list' ? (
+      {view === 'list' && (
         <ListView
           phrases={shown}
           onRemove={onRemove}
@@ -78,7 +98,8 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
           tagSuggestions={tags}
           onLearn={startLearn}
         />
-      ) : (
+      )}
+      {view === 'train' && (
         <TrainView
           phrases={shown}
           onUpdate={onUpdate}
@@ -87,7 +108,50 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
           onClearLearn={() => setLearnPhrase(null)}
         />
       )}
+      {view === 'quiz' && (
+        <QuizView phrases={shown} onUpdate={onUpdate} tagSuggestions={tags} settings={settings} />
+      )}
     </div>
+  );
+}
+
+// ── Type quiz ────────────────────────────────────────────────────────────────
+function QuizView({
+  phrases,
+  onUpdate,
+  tagSuggestions,
+  settings,
+}: {
+  phrases: PhraseItem[];
+  onUpdate: (id: string, patch: Partial<PhraseItem>) => void;
+  tagSuggestions: string[];
+  settings: Settings;
+}) {
+  const goalLang = findLanguage(settings.goalLanguage);
+  const items: QuizItem[] = phrases
+    .filter((p) => p.translation.trim())
+    .map((p) => ({
+      id: p.id,
+      prompt: p.translation,
+      answer: p.target,
+      pinyin: p.pinyin,
+      tags: p.tags,
+      lang: p.lang,
+    }));
+
+  return (
+    <TypeQuiz
+      items={items}
+      romanized={!!goalLang.romanize}
+      answerLangName={goalLang.nativeName}
+      locale={speechLocale(goalLang)}
+      tagSuggestions={tagSuggestions}
+      onResult={(id, correct) => {
+        const p = phrases.find((x) => x.id === id);
+        if (!p) return;
+        onUpdate(id, { reviews: p.reviews + 1, known: p.known + (correct ? 1 : 0) });
+      }}
+    />
   );
 }
 

@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Languages, Plus, X, BookOpen, Copy, Check } from 'lucide-react';
+import { Languages, Plus, X, BookOpen, Copy, Check, PencilLine } from 'lucide-react';
 import { Settings, VocabItem } from '../storage';
 import { exportVocab } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { Row } from '../components/Row';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
+import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { ExportMenu } from '../components/ExportMenu';
 import { useT } from '../i18n/I18nContext';
 import type { TFn } from '../i18n';
@@ -24,9 +25,25 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
   const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<'list' | 'quiz'>('list');
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
+
+  const goalLang = findLanguage(settings.goalLanguage);
+
+  // Quiz over words that have a meaning to show as the prompt. For romanized
+  // goal languages (Chinese, Japanese …) the learner types the pinyin/romaji.
+  const quizItems: QuizItem[] = shown
+    .filter((v) => v.translation.trim())
+    .map((v) => ({
+      id: v.id,
+      prompt: v.translation,
+      answer: v.term,
+      pinyin: v.pinyin,
+      tags: v.tags,
+      lang: v.lang,
+    }));
 
   function submit() {
     if (!term.trim()) return;
@@ -48,17 +65,49 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
             {shown.length} {shown.length === 1 ? t('vocab.one') : t('vocab.many')}
           </span>
         </div>
-        <div className="head-right">
-          {shown.length > 0 && (
-            <ExportMenu onPick={(f) => exportVocab(shown, settings.goalLanguage, f)} />
-          )}
-          <button className="add-toggle" onClick={() => setAdding((v) => !v)}>
-            {adding ? <X size={15} /> : <Plus size={15} />}
-            {adding ? t('common.cancel') : t('common.new')}
-          </button>
-        </div>
+        {mode === 'list' && (
+          <div className="head-right">
+            {shown.length > 0 && (
+              <ExportMenu onPick={(f) => exportVocab(shown, settings.goalLanguage, f)} />
+            )}
+            <button className="add-toggle" onClick={() => setAdding((v) => !v)}>
+              {adding ? <X size={15} /> : <Plus size={15} />}
+              {adding ? t('common.cancel') : t('common.new')}
+            </button>
+          </div>
+        )}
       </div>
 
+      <div className="segment sub">
+        <button
+          className={`seg-btn${mode === 'list' ? ' active' : ''}`}
+          onClick={() => setMode('list')}
+        >
+          <BookOpen size={15} />
+          {t('tab.vocab')}
+        </button>
+        <button
+          className={`seg-btn${mode === 'quiz' ? ' active' : ''}`}
+          onClick={() => {
+            setAdding(false);
+            setMode('quiz');
+          }}
+        >
+          <PencilLine size={15} />
+          {t('quiz.tab')}
+        </button>
+      </div>
+
+      {mode === 'quiz' ? (
+        <TypeQuiz
+          items={quizItems}
+          romanized={!!goalLang.romanize}
+          answerLangName={goalLang.nativeName}
+          locale={speechLocale(goalLang)}
+          tagSuggestions={tagSuggestions}
+        />
+      ) : (
+        <>
       {adding && (
         <div className="add-card">
           <input
@@ -103,6 +152,8 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
             />
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );

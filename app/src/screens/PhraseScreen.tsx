@@ -20,6 +20,7 @@ import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
+import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { useT } from '../i18n/I18nContext';
 
 type Props = {
@@ -29,7 +30,7 @@ type Props = {
   tagSuggestions: string[];
 };
 
-type View2 = 'list' | 'train';
+type View2 = 'list' | 'train' | 'quiz';
 
 export function PhraseScreen({
   phrases,
@@ -111,9 +112,18 @@ export function PhraseScreen({
             setView('train');
           }}
         />
+        <Seg
+          icon="create-outline"
+          label={t('quiz.tab')}
+          active={view === 'quiz'}
+          onPress={() => {
+            setLearnPhrase(null);
+            setView('quiz');
+          }}
+        />
       </View>
 
-      {view === 'list' ? (
+      {view === 'list' && (
         <ListView
           phrases={shown}
           onRemove={onRemove}
@@ -121,7 +131,8 @@ export function PhraseScreen({
           tagSuggestions={tags}
           onLearn={startLearn}
         />
-      ) : (
+      )}
+      {view === 'train' && (
         <TrainView
           phrases={shown}
           onUpdate={onUpdate}
@@ -129,6 +140,9 @@ export function PhraseScreen({
           learnPhrase={learnPhrase}
           onClearLearn={() => setLearnPhrase(null)}
         />
+      )}
+      {view === 'quiz' && (
+        <QuizView phrases={shown} onUpdate={onUpdate} tagSuggestions={tags} settings={settings} />
       )}
     </KeyboardAvoidingView>
   );
@@ -542,6 +556,46 @@ function TrainView({
         </Pressable>
       )}
     </View>
+  );
+}
+
+// ── Type quiz ────────────────────────────────────────────────────────────────
+function QuizView({
+  phrases,
+  onUpdate,
+  tagSuggestions,
+  settings,
+}: {
+  phrases: PhraseItem[];
+  onUpdate: (id: string, patch: Partial<PhraseItem>) => void;
+  tagSuggestions: string[];
+  settings: Settings;
+}) {
+  const goalLang = findLanguage(settings.goalLanguage);
+  const items: QuizItem[] = phrases
+    .filter((p) => p.translation.trim())
+    .map((p) => ({
+      id: p.id,
+      prompt: p.translation,
+      answer: p.target,
+      pinyin: p.pinyin,
+      tags: p.tags,
+      lang: p.lang,
+    }));
+
+  return (
+    <TypeQuiz
+      items={items}
+      romanized={!!goalLang.romanize}
+      answerLangName={goalLang.nativeName}
+      locale={speechLocale(goalLang)}
+      tagSuggestions={tagSuggestions}
+      onResult={(id, correct) => {
+        const p = phrases.find((x) => x.id === id);
+        if (!p) return;
+        onUpdate(id, { reviews: p.reviews + 1, known: p.known + (correct ? 1 : 0) });
+      }}
+    />
   );
 }
 

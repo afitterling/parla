@@ -22,6 +22,7 @@ import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
+import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { useT } from '../i18n/I18nContext';
 import { TFn } from '../i18n';
 
@@ -42,12 +43,26 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const [translation, setTranslation] = useState('');
   const [adding, setAdding] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [mode, setMode] = useState<'list' | 'quiz'>('list');
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
 
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
+
+  // Quiz over words that have a meaning to show as the prompt. For romanized
+  // goal languages (Chinese, Japanese …) the learner types the pinyin/romaji.
+  const quizItems: QuizItem[] = shown
+    .filter((v) => v.translation.trim())
+    .map((v) => ({
+      id: v.id,
+      prompt: v.translation,
+      answer: v.term,
+      pinyin: v.pinyin,
+      tags: v.tags,
+      lang: v.lang,
+    }));
   // Example gets a transliteration line only when the goal language uses one and
   // the learner has Pinyin/Romaji turned on (same rule as the dialogue).
   const wantPinyin = !!goalLang.romanize && settings.showPinyin;
@@ -150,39 +165,71 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
             {shown.length} {shown.length === 1 ? t('vocab.one') : t('vocab.many')}
           </Text>
         </View>
-        <View style={styles.headerRight}>
-          {shown.some(needsEnrich) && (
-            <Pressable
-              style={styles.exportBtn}
-              onPress={promptGenerateAll}
-              disabled={bulkBusy}
-              hitSlop={8}
-              accessibilityLabel={t('vocab.genExample')}
-            >
-              {bulkBusy ? (
-                <ActivityIndicator size="small" color={theme.colors.accent} />
-              ) : (
-                <Ionicons name="sparkles-outline" size={18} color={theme.colors.accent} />
-              )}
+        {mode === 'list' && (
+          <View style={styles.headerRight}>
+            {shown.some(needsEnrich) && (
+              <Pressable
+                style={styles.exportBtn}
+                onPress={promptGenerateAll}
+                disabled={bulkBusy}
+                hitSlop={8}
+                accessibilityLabel={t('vocab.genExample')}
+              >
+                {bulkBusy ? (
+                  <ActivityIndicator size="small" color={theme.colors.accent} />
+                ) : (
+                  <Ionicons name="sparkles-outline" size={18} color={theme.colors.accent} />
+                )}
+              </Pressable>
+            )}
+            {shown.length > 0 && (
+              <Pressable
+                style={styles.exportBtn}
+                onPress={promptExport}
+                hitSlop={8}
+                accessibilityLabel={t('export.title')}
+              >
+                <Ionicons name="share-outline" size={18} color={theme.colors.accent} />
+              </Pressable>
+            )}
+            <Pressable style={styles.addToggle} onPress={() => setAdding((v) => !v)}>
+              <Ionicons name={adding ? 'close' : 'add'} size={15} color="#fff" />
+              <Text style={styles.addToggleText}>
+                {adding ? t('common.cancel') : t('common.new')}
+              </Text>
             </Pressable>
-          )}
-          {shown.length > 0 && (
-            <Pressable
-              style={styles.exportBtn}
-              onPress={promptExport}
-              hitSlop={8}
-              accessibilityLabel={t('export.title')}
-            >
-              <Ionicons name="share-outline" size={18} color={theme.colors.accent} />
-            </Pressable>
-          )}
-          <Pressable style={styles.addToggle} onPress={() => setAdding((v) => !v)}>
-            <Ionicons name={adding ? 'close' : 'add'} size={15} color="#fff" />
-            <Text style={styles.addToggleText}>{adding ? t('common.cancel') : t('common.new')}</Text>
-          </Pressable>
-        </View>
+          </View>
+        )}
       </View>
 
+      <View style={styles.segment}>
+        <Seg
+          icon="book-outline"
+          label={t('tab.vocab')}
+          active={mode === 'list'}
+          onPress={() => setMode('list')}
+        />
+        <Seg
+          icon="create-outline"
+          label={t('quiz.tab')}
+          active={mode === 'quiz'}
+          onPress={() => {
+            setAdding(false);
+            setMode('quiz');
+          }}
+        />
+      </View>
+
+      {mode === 'quiz' ? (
+        <TypeQuiz
+          items={quizItems}
+          romanized={!!goalLang.romanize}
+          answerLangName={goalLang.nativeName}
+          locale={speechLocale(goalLang)}
+          tagSuggestions={tagSuggestions}
+        />
+      ) : (
+        <>
       {adding && (
         <View style={styles.addCard}>
           <TextInput
@@ -236,7 +283,30 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           )}
         />
       )}
+        </>
+      )}
     </KeyboardAvoidingView>
+  );
+}
+
+function Seg({
+  icon,
+  label,
+  active,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  return (
+    <Pressable style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress}>
+      <Ionicons name={icon} size={15} color={active ? '#fff' : theme.colors.textMuted} />
+      <Text style={[styles.segText, active && styles.segTextActive]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -397,6 +467,26 @@ function makeStyles(theme: Theme) {
     paddingVertical: 8,
   },
   addToggleText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.bgElevated,
+    borderRadius: theme.radius.pill,
+    padding: 3,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  segBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 9,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  segBtnActive: { backgroundColor: theme.colors.accent },
+  segText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  segTextActive: { color: '#fff' },
   addCard: {
     marginHorizontal: 16,
     marginBottom: 12,
