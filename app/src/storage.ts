@@ -12,6 +12,8 @@ export type VocabItem = {
   lang: string;
   tags: string[];
   createdAt: number;
+  reviews: number; // how often quizzed
+  known: number; // how often answered correctly — >0 counts as "learned"
 };
 
 export type PhraseItem = {
@@ -26,6 +28,29 @@ export type PhraseItem = {
   known: number; // how often marked "gewusst"
 };
 
+// An input→goal language combination the learner has actually saved content
+// into. Kept in most-recently-used order so the header menu can offer a quick
+// switch back to a pair worked on before.
+export type LanguagePair = {
+  input: string;
+  goal: string;
+  usedAt: number;
+};
+
+export const MAX_RECENT_PAIRS = 8;
+
+// Put `pair` at the front of the list, dropping any earlier entry for the same
+// combination and trimming to MAX_RECENT_PAIRS.
+export function rememberPair(
+  pairs: LanguagePair[],
+  input: string,
+  goal: string,
+  now: number
+): LanguagePair[] {
+  const rest = pairs.filter((p) => !(p.input === input && p.goal === goal));
+  return [{ input, goal, usedAt: now }, ...rest].slice(0, MAX_RECENT_PAIRS);
+}
+
 export type Settings = {
   anthropicKey: string;
   openaiKey: string;
@@ -36,6 +61,7 @@ export type Settings = {
   uiLanguage: string; // app UI language: a UiLang code or 'auto' (device locale)
   defaultMode: 'free' | 'ask'; // which dialog mode starts active: 'free'=Interpreter, 'ask'=Coach
   theme: 'light' | 'dark' | 'system'; // color theme; 'system' follows the OS
+  recentPairs: LanguagePair[]; // language pairs content was saved into, newest first
 };
 
 // ── Storage backing ───────────────────────────────────────────────────────────
@@ -149,8 +175,13 @@ function isPlaceholder(key: string): boolean {
 }
 
 function normalizeVocab(items: any[]): VocabItem[] {
-  // Be tolerant of older records that predate the tags field.
-  return items.map((v) => ({ ...v, tags: Array.isArray(v.tags) ? v.tags : [] })) as VocabItem[];
+  // Be tolerant of older records that predate the tags / quiz-stats fields.
+  return items.map((v) => ({
+    ...v,
+    tags: Array.isArray(v.tags) ? v.tags : [],
+    reviews: v.reviews ?? 0,
+    known: v.known ?? 0,
+  })) as VocabItem[];
 }
 
 export async function loadVocab(): Promise<VocabItem[]> {
@@ -222,7 +253,21 @@ export async function loadSettings(): Promise<Settings> {
     uiLanguage: stored.uiLanguage || 'auto',
     defaultMode: stored.defaultMode === 'ask' ? 'ask' : 'free',
     theme: stored.theme === 'light' || stored.theme === 'dark' ? stored.theme : 'system',
+    recentPairs: sanitizePairs(stored.recentPairs),
   };
+}
+
+// Older builds (and the desktop app) don't write `recentPairs` — accept anything
+// shaped right and ignore the rest.
+function sanitizePairs(value: unknown): LanguagePair[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (p): p is LanguagePair =>
+        !!p && typeof p.input === 'string' && typeof p.goal === 'string'
+    )
+    .map((p) => ({ input: p.input, goal: p.goal, usedAt: Number(p.usedAt) || 0 }))
+    .slice(0, MAX_RECENT_PAIRS);
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
@@ -235,6 +280,87 @@ function safeParse(raw: string): Partial<Settings> {
   } catch {
     return {};
   }
+}
+
+// ── Quiz preferences ────────────────────────────────────────────────────────
+// How a quiz session picks its cards. Remembered per scope ('vocab' | 'phrases')
+// so starting the next session is a single tap.
+
+export type QuizScope = 'vocab' | 'phrases' | 'train';
+
+// How a flashcard is answered: tap to reveal (recognition) or type the answer
+// out (recall). Only the trainer offers the choice — the quiz is always typed.
+export type AnswerMode = 'reveal' | 'type';
+
+// 'recent' = added in the last QUIZ_RECENT_DAYS days, 'mix' = round-robin across
+// tags so every topic shows up, 'tags' = only the tags picked in `tags`,
+// 'random' = the whole collection.
+export type QuizSource = 'recent' | 'mix' | 'tags' | 'random';
+
+// What the quiz card shows and what you type back:
+//  'toWord'    — meaning shown, type the word (characters or its romanization)
+//  'toReading' — word shown, type the romanization (romanized languages only)
+//  'toMeaning' — word shown, type the meaning
+export type QuizDirection = 'toWord' | 'toReading' | 'toMeaning';
+
+export type QuizPrefs = {
+  direction: QuizDirection;
+  source: QuizSource;
+  tags: string[]; // used by source 'tags'
+  count: number; // cards per session; 0 = all
+  skipLearned: boolean; // leave out items already answered correctly
+  answerMode: AnswerMode; // trainer only
+};
+
+export const QUIZ_RECENT_DAYS = 10;
+export const QUIZ_COUNTS = [10, 20, 50, 0]; // 0 = all
+
+export const DEFAULT_QUIZ_PREFS: QuizPrefs = {
+  direction: 'toWord',
+  source: 'random',
+  tags: [],
+  count: 20,
+  skipLearned: true,
+  answerMode: 'reveal',
+};
+
+const QUIZ_FILE = 'quiz.json';
+
+function sanitizePrefs(value: any): QuizPrefs {
+  const sources: QuizSource[] = ['recent', 'mix', 'tags', 'random'];
+  const directions: QuizDirection[] = ['toWord', 'toReading', 'toMeaning'];
+  return {
+    direction: directions.includes(value?.direction)
+      ? value.direction
+      : DEFAULT_QUIZ_PREFS.direction,
+    source: sources.includes(value?.source) ? value.source : DEFAULT_QUIZ_PREFS.source,
+    tags: Array.isArray(value?.tags) ? value.tags.filter((t: any) => typeof t === 'string') : [],
+    count: QUIZ_COUNTS.includes(Number(value?.count))
+      ? Number(value.count)
+      : DEFAULT_QUIZ_PREFS.count,
+    skipLearned: value?.skipLearned ?? DEFAULT_QUIZ_PREFS.skipLearned,
+    answerMode: value?.answerMode === 'type' ? 'type' : 'reveal',
+  };
+}
+
+async function loadAllQuizPrefs(): Promise<Record<string, any>> {
+  const raw = await readRaw(QUIZ_FILE);
+  if (!raw) return {};
+  try {
+    const o = JSON.parse(raw);
+    return o && typeof o === 'object' ? o : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function loadQuizPrefs(scope: QuizScope): Promise<QuizPrefs> {
+  return sanitizePrefs((await loadAllQuizPrefs())[scope]);
+}
+
+export async function saveQuizPrefs(scope: QuizScope, prefs: QuizPrefs): Promise<void> {
+  const all = await loadAllQuizPrefs();
+  await writeRaw(QUIZ_FILE, JSON.stringify({ ...all, [scope]: prefs }));
 }
 
 // ── Usage tracking (free-tier rate limit) ──────────────────────────────────

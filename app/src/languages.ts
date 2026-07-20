@@ -146,3 +146,11 @@ export const DEFAULT_LANGUAGE = LANGUAGES.find((l) => l.code === 'zh') ?? LANGUA
 export function findLanguage(code: string): Language {
   return LANGUAGES.find((l) => l.code === code) ?? DEFAULT_LANGUAGE;
 }
+
+// Languages written with Han characters — the only ones where stroke-order
+// practice makes sense (Japanese for its kanji, Korean hangul is excluded).
+const HANZI_LANGS = new Set(['zh', 'zh-TW', 'yue', 'ja']);
+
+export function usesHanzi(code: string): boolean {
+  return HANZI_LANGS.has(code);
+}

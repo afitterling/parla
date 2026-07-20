@@ -20,6 +20,7 @@ import {
   loadVocab,
   PhraseItem,
   recentTags,
+  rememberPair,
   savePhrases,
   saveSettings,
   saveVocab,
@@ -31,6 +32,8 @@ import { VocabScreen } from './src/screens/VocabScreen';
 import { PhraseScreen } from './src/screens/PhraseScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { I18nProvider } from './src/i18n/I18nContext';
+import { lockPortrait } from './src/orientation';
+import { PairMenu } from './src/components/PairMenu';
 import { makeT, resolveUiLang } from './src/i18n';
 
 type Tab = 'dialog' | 'vocab' | 'phrases' | 'settings';
@@ -49,6 +52,12 @@ export default function App() {
   const [vocab, setVocab] = useState<VocabItem[]>([]);
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
   const scheme = useColorScheme();
+
+  // The app itself stays portrait; only the full-screen word card unlocks
+  // rotation while it is open (see WordCard).
+  useEffect(() => {
+    lockPortrait();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -84,6 +93,31 @@ export default function App() {
       ...settings,
       inputLanguage: settings.goalLanguage,
       goalLanguage: settings.inputLanguage,
+    });
+  }
+
+  // Switch both languages at once from the header's quick menu.
+  function usePair(input: string, goal: string) {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, inputLanguage: input, goalLanguage: goal });
+  }
+
+  // Saving a word or a phrase marks the current pair as one the learner actually
+  // works in, so it shows up in the quick menu.
+  function notePairUsed() {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        recentPairs: rememberPair(
+          prev.recentPairs,
+          prev.inputLanguage,
+          prev.goalLanguage,
+          Date.now()
+        ),
+      };
+      saveSettings(next);
+      return next;
     });
   }
 
@@ -130,7 +164,7 @@ export default function App() {
 
   // New vocab starts untagged; tags are added later via the row tag editor, so
   // the add payload deliberately omits them.
-  function addVocab(items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) {
+  function addVocab(items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) {
     setVocab((prev) => {
       const existing = new Set(prev.map((v) => `${v.lang}:${v.term.toLowerCase()}`));
       const fresh = items
@@ -140,7 +174,10 @@ export default function App() {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           tags: [],
           createdAt: Date.now(),
+          reviews: 0,
+          known: 0,
         }));
+      if (fresh.length > 0) notePairUsed();
       const next = [...fresh, ...prev];
       saveVocab(next);
       return next;
@@ -180,6 +217,7 @@ export default function App() {
     const next = [item, ...phrases];
     setPhrases(next);
     savePhrases(next);
+    notePairUsed();
     return item.id;
   }
 
@@ -238,6 +276,12 @@ export default function App() {
           </Text>
           <Text style={styles.tagline}>{t('app.tagline').toUpperCase()}</Text>
         </View>
+        <PairMenu
+          input={settings.inputLanguage}
+          goal={settings.goalLanguage}
+          pairs={settings.recentPairs}
+          onPick={usePair}
+        />
       </View>
 
       <View style={styles.body}>

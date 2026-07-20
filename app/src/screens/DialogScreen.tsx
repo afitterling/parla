@@ -25,6 +25,7 @@ import {
 import { findLanguage } from '../languages';
 import { useRecorder } from '../useRecorder';
 import { Paywall } from '../components/Paywall';
+import { BusyOverlay } from '../components/BusyOverlay';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import {
@@ -49,7 +50,7 @@ type Msg = {
 
 type Props = {
   settings: Settings;
-  onAddVocab: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) => void;
+  onAddVocab: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) => void;
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   onChangeInputLanguage: (code: string) => void;
@@ -88,6 +89,9 @@ export function DialogScreen({
   const [showPaywall, setShowPaywall] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // The word-by-word breakdown runs its own request; kept separately so Cancel
+  // can abort whichever of the two is in flight.
+  const breakdownAbortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const recorder = useRecorder();
   // Remaining free-tier quota this hour; null = unlimited (dev env or Pro).
@@ -126,6 +130,7 @@ export function DialogScreen({
   function cancel() {
     cancelledRef.current = true;
     abortRef.current?.abort();
+    breakdownAbortRef.current?.abort();
     setBusy(null);
   }
 
@@ -260,14 +265,22 @@ export function DialogScreen({
   // doesn't interfere with an in-flight dialogue turn.
   async function breakdown(text: string): Promise<VocabSuggestion[]> {
     const ctrl = new AbortController();
-    return breakdownSentence(
-      settings.openaiKey,
-      text,
-      goalLang,
-      inputLang,
-      wantPinyin,
-      ctrl.signal
-    );
+    breakdownAbortRef.current = ctrl;
+    cancelledRef.current = false;
+    setBusy(t('dialog.breakdownLoading'));
+    try {
+      return await breakdownSentence(
+        settings.openaiKey,
+        text,
+        goalLang,
+        inputLang,
+        wantPinyin,
+        ctrl.signal
+      );
+    } finally {
+      breakdownAbortRef.current = null;
+      setBusy(null);
+    }
   }
 
   // Save several dissected words at once ("add all").
@@ -424,15 +437,6 @@ export function DialogScreen({
           )
         )}
 
-        {busy && (
-          <View style={styles.busyRow}>
-            <ActivityIndicator color={theme.colors.accent} />
-            <Text style={styles.busyText}>{busy}</Text>
-            <Pressable style={styles.cancelBtn} onPress={cancel}>
-              <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
-            </Pressable>
-          </View>
-        )}
         {error && (
           <View style={styles.errorRow}>
             <Ionicons name="warning-outline" size={15} color={theme.colors.danger} />
@@ -473,6 +477,8 @@ export function DialogScreen({
           <Text style={styles.recHint}>{t('dialog.recHint')}</Text>
         </View>
       )}
+
+      <BusyOverlay visible={!!busy} label={busy} onCancel={cancel} />
 
       <Paywall
         visible={showPaywall}
@@ -986,17 +992,6 @@ function makeStyles(theme: Theme) {
     backgroundColor: theme.colors.bgElevated,
   },
 
-  busyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  busyText: { color: theme.colors.textMuted, fontSize: 13, flex: 1 },
-  cancelBtn: {
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    backgroundColor: theme.colors.bgElevated,
-  },
-  cancelBtnText: { color: theme.colors.danger, fontSize: 13, fontWeight: '700' },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   error: { color: theme.colors.danger, fontSize: 13, flex: 1 },
 

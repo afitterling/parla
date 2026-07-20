@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -14,7 +15,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { PhraseItem, Settings, recentTags } from '../storage';
+import { AnswerMode, PhraseItem, Settings, loadQuizPrefs, recentTags, saveQuizPrefs } from '../storage';
+import { answerMatches } from '../answers';
 import { ExportFormat, exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
@@ -369,6 +371,26 @@ function TrainView({
   const [queue, setQueue] = useState<string[] | null>(null); // ids; null = not started
   const [total, setTotal] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  // Recall mode: type the answer instead of just flipping the card. Remembered
+  // across sessions like the quiz's selection.
+  const [answerMode, setAnswerMode] = useState<AnswerMode>('reveal');
+  const [input, setInput] = useState('');
+  const [lastCorrect, setLastCorrect] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    loadQuizPrefs('train').then((p) => {
+      if (alive) setAnswerMode(p.answerMode);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function chooseAnswerMode(mode: AnswerMode) {
+    setAnswerMode(mode);
+    saveQuizPrefs('train', { ...(await loadQuizPrefs('train')), answerMode: mode });
+  }
 
   const pool = useMemo(
     () =>
@@ -416,7 +438,8 @@ function TrainView({
   // Setup screen
   if (queue === null) {
     return (
-      <View style={{ flex: 1 }}>
+      // Direction + answer mode + tag filter can outgrow a phone screen.
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.trainSetup}>
         <Text style={styles.trainHint}>{t('train.direction')}</Text>
         <View style={[styles.orderToggle, styles.trainBlock]}>
           <Pressable
@@ -433,6 +456,26 @@ function TrainView({
           >
             <Text style={[styles.orderText, direction === 't2de' && styles.orderTextActive]}>
               {t('train.t2de')}
+            </Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.trainHint}>{t('train.answerMode')}</Text>
+        <View style={[styles.orderToggle, styles.trainBlock]}>
+          <Pressable
+            style={[styles.orderBtn, answerMode === 'reveal' && styles.orderBtnActive]}
+            onPress={() => chooseAnswerMode('reveal')}
+          >
+            <Text style={[styles.orderText, answerMode === 'reveal' && styles.orderTextActive]}>
+              {t('train.modeReveal')}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.orderBtn, answerMode === 'type' && styles.orderBtnActive]}
+            onPress={() => chooseAnswerMode('type')}
+          >
+            <Text style={[styles.orderText, answerMode === 'type' && styles.orderTextActive]}>
+              {t('train.modeType')}
             </Text>
           </Pressable>
         </View>
@@ -458,7 +501,7 @@ function TrainView({
             </Text>
           )}
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -491,16 +534,32 @@ function TrainView({
   const backText = back || t('train.noTranslation');
   const done = total - queue.length;
 
+  // Typing mode: what counts as the right answer for the current direction.
+  // Answering a Chinese/Japanese card in romanization is accepted too, so no
+  // Chinese keyboard is needed.
+  const typing = answerMode === 'type';
+  const cardLang = findLanguage(current.lang);
+  const typeTarget = direction === 'de2t'; // typing the goal language, not the meaning
+  const accepted = typeTarget ? [current.target, current.pinyin] : [current.translation];
+
   function known() {
     onUpdate(current!.id, { reviews: current!.reviews + 1, known: current!.known + 1 });
     setQueue((q) => (q ? q.slice(1) : q));
     setRevealed(false);
+    setInput('');
   }
 
   function again() {
     onUpdate(current!.id, { reviews: current!.reviews + 1 });
     setQueue((q) => (q ? [...q.slice(1), q[0]] : q));
     setRevealed(false);
+    setInput('');
+  }
+
+  function check() {
+    if (revealed) return;
+    setLastCorrect(answerMatches(input, accepted));
+    setRevealed(true);
   }
 
   return (
@@ -517,7 +576,17 @@ function TrainView({
         </Pressable>
       </View>
 
-      <Pressable style={styles.card} onPress={() => !revealed && setRevealed(true)}>
+      {/* A long phrase plus its translation can outgrow the card — scroll
+          inside it instead of clipping. */}
+      <ScrollView
+        style={styles.cardScroll}
+        contentContainerStyle={styles.card}
+        keyboardShouldPersistTaps="handled"
+      >
+      <Pressable
+        style={styles.cardInner}
+        onPress={() => !revealed && !typing && setRevealed(true)}
+      >
         <Text style={styles.cardSide}>
           {direction === 'de2t' ? t('train.native') : t('train.targetLang')}
         </Text>
@@ -525,8 +594,70 @@ function TrainView({
         {direction === 't2de' && !!current.pinyin && (
           <Text style={styles.cardPinyin}>{current.pinyin}</Text>
         )}
+
+        {typing && (
+          <>
+            <Text style={styles.typeHint}>
+              {!typeTarget
+                ? t('train.typeMeaning')
+                : cardLang.romanize
+                  ? t('quiz.typePinyin')
+                  : t('quiz.typeAnswer', { lang: cardLang.nativeName })}
+            </Text>
+            {/* Submit sits next to the input, not at the bottom of the screen:
+                with the keyboard up there is no room below the card. */}
+            <View style={styles.typeRow}>
+              <TextInput
+                // Remount per card so autoFocus fires again on the next one.
+                key={current.id}
+                style={[
+                  styles.typeInput,
+                  revealed && (lastCorrect ? styles.typeInputCorrect : styles.typeInputWrong),
+                ]}
+                value={input}
+                onChangeText={setInput}
+                editable={!revealed}
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={typeTarget && cardLang.romanize ? 'pinyin …' : '…'}
+                placeholderTextColor={theme.colors.textFaint}
+                returnKeyType="done"
+                onSubmitEditing={check}
+              />
+              {!revealed && (
+                <Pressable
+                  style={[styles.typeSubmit, !input.trim() && styles.bigBtnDisabled]}
+                  disabled={!input.trim()}
+                  onPress={check}
+                  accessibilityLabel={t('quiz.check')}
+                >
+                  <Ionicons name="arrow-forward" size={22} color="#fff" />
+                </Pressable>
+              )}
+            </View>
+          </>
+        )}
+
         {revealed ? (
           <>
+            {typing && (
+              <View style={styles.typeVerdict}>
+                <Ionicons
+                  name={lastCorrect ? 'checkmark-circle' : 'close-circle'}
+                  size={18}
+                  color={lastCorrect ? theme.colors.success : theme.colors.danger}
+                />
+                <Text
+                  style={[
+                    styles.typeVerdictText,
+                    { color: lastCorrect ? theme.colors.success : theme.colors.danger },
+                  ]}
+                >
+                  {lastCorrect ? t('quiz.correct') : t('quiz.wrong')}
+                </Text>
+              </View>
+            )}
             <View style={styles.cardDivider} />
             <Text style={styles.cardBack}>{backText}</Text>
             {direction === 'de2t' && !!current.pinyin && (
@@ -535,9 +666,11 @@ function TrainView({
             <TagBadges tags={current.tags} />
           </>
         ) : (
-          <Text style={styles.cardTapHint}>{t('train.tapToReveal')}</Text>
+          !typing && <Text style={styles.cardTapHint}>{t('train.tapToReveal')}</Text>
         )}
       </Pressable>
+
+      </ScrollView>
 
       {revealed ? (
         <View style={styles.answerRow}>
@@ -550,7 +683,7 @@ function TrainView({
             <Text style={styles.knownText}>{t('train.knownBtn')}</Text>
           </Pressable>
         </View>
-      ) : (
+      ) : typing ? null : (
         <Pressable style={styles.revealBtn} onPress={() => setRevealed(true)}>
           <Text style={styles.revealText}>{t('train.reveal')}</Text>
         </Pressable>
@@ -572,16 +705,17 @@ function QuizView({
   settings: Settings;
 }) {
   const goalLang = findLanguage(settings.goalLanguage);
-  const items: QuizItem[] = phrases
-    .filter((p) => p.translation.trim())
-    .map((p) => ({
-      id: p.id,
-      prompt: p.translation,
-      answer: p.target,
-      pinyin: p.pinyin,
-      tags: p.tags,
-      lang: p.lang,
-    }));
+  // The quiz drops what the chosen direction can't ask for, so no pre-filtering.
+  const items: QuizItem[] = phrases.map((p) => ({
+    id: p.id,
+    term: p.target,
+    translation: p.translation,
+    pinyin: p.pinyin,
+    tags: p.tags,
+    lang: p.lang,
+    createdAt: p.createdAt,
+    known: p.known,
+  }));
 
   return (
     <TypeQuiz
@@ -590,6 +724,7 @@ function QuizView({
       answerLangName={goalLang.nativeName}
       locale={speechLocale(goalLang)}
       tagSuggestions={tagSuggestions}
+      scope="phrases"
       onResult={(id, correct) => {
         const p = phrases.find((x) => x.id === id);
         if (!p) return;
@@ -794,6 +929,7 @@ function makeStyles(theme: Theme) {
     marginBottom: 8,
   },
   trainBlock: { marginHorizontal: 16 },
+  trainSetup: { flexGrow: 1, paddingBottom: 16 },
   trainCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 },
   poolCount: { color: theme.colors.textMuted, fontSize: 15, fontWeight: '600' },
   bigBtn: {
@@ -819,9 +955,11 @@ function makeStyles(theme: Theme) {
   progressDir: { color: theme.colors.textFaint, fontSize: 12, flex: 1 },
   progressStop: { color: theme.colors.textMuted, fontSize: 18, fontWeight: '700' },
 
-  card: {
-    flex: 1,
-    margin: 16,
+  cardScroll: { flex: 1 },
+  // The scroll container centres a short card and grows past the fold on a long
+  // one; `cardInner` is the visible card surface (and the tap-to-reveal target).
+  card: { flexGrow: 1, justifyContent: 'center', padding: 16 },
+  cardInner: {
     backgroundColor: theme.colors.card,
     borderRadius: theme.radius.lg,
     borderWidth: 1,
@@ -854,6 +992,35 @@ function makeStyles(theme: Theme) {
     marginTop: 8,
   },
   cardTapHint: { color: theme.colors.textFaint, fontSize: 13, marginTop: 24 },
+
+  // Typing (recall) mode on the flashcard.
+  typeHint: { color: theme.colors.textFaint, fontSize: 12, marginTop: 20, marginBottom: 8 },
+  typeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'stretch' },
+  typeSubmit: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accent,
+  },
+  typeInput: {
+    flex: 1,
+    backgroundColor: theme.colors.bgElevated,
+    borderRadius: theme.radius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.cardBorder,
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
+    color: theme.colors.text,
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  typeInputCorrect: { borderColor: theme.colors.success },
+  typeInputWrong: { borderColor: theme.colors.danger },
+  typeVerdict: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  typeVerdictText: { fontSize: 14, fontWeight: '800' },
 
   answerRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingBottom: 8 },
   answerBtn: {

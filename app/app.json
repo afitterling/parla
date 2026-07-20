@@ -3,7 +3,7 @@
     "name": "Parla",
     "slug": "sprachapp",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0B0B0F",

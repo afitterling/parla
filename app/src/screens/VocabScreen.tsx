@@ -18,10 +18,12 @@ import { useStyles, useTheme } from '../ThemeContext';
 import { Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
 import { generateVocabExample } from '../api';
-import { findLanguage, speechLocale } from '../languages';
+import { findLanguage, speechLocale, usesHanzi } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
-import { TagBadges, TagModal } from '../components/TagModal';
+import { TagBadges } from '../components/TagModal';
+import { WordCard } from '../components/WordCard';
+import { hasHanzi } from '../strokes';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { useT } from '../i18n/I18nContext';
 import { TFn } from '../i18n';
@@ -30,7 +32,7 @@ type Props = {
   vocab: VocabItem[];
   settings: Settings;
   onRemove: (id: string) => void;
-  onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) => void;
+  onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) => void;
   onUpdate: (id: string, patch: Partial<VocabItem>) => void;
   tagSuggestions: string[];
 };
@@ -51,18 +53,19 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
 
-  // Quiz over words that have a meaning to show as the prompt. For romanized
-  // goal languages (Chinese, Japanese …) the learner types the pinyin/romaji.
-  const quizItems: QuizItem[] = shown
-    .filter((v) => v.translation.trim())
-    .map((v) => ({
-      id: v.id,
-      prompt: v.translation,
-      answer: v.term,
-      pinyin: v.pinyin,
-      tags: v.tags,
-      lang: v.lang,
-    }));
+  // Every word goes to the quiz — which of them can actually be asked depends on
+  // the session's direction (a word without a translation can still be asked for
+  // its pinyin), so that filtering happens there.
+  const quizItems: QuizItem[] = shown.map((v) => ({
+    id: v.id,
+    term: v.term,
+    translation: v.translation,
+    pinyin: v.pinyin,
+    tags: v.tags,
+    lang: v.lang,
+    createdAt: v.createdAt,
+    known: v.known ?? 0,
+  }));
   // Example gets a transliteration line only when the goal language uses one and
   // the learner has Pinyin/Romaji turned on (same rule as the dialogue).
   const wantPinyin = !!goalLang.romanize && settings.showPinyin;
@@ -227,6 +230,16 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           answerLangName={goalLang.nativeName}
           locale={speechLocale(goalLang)}
           tagSuggestions={tagSuggestions}
+          scope="vocab"
+          onResult={(id, correct) => {
+            // Remember what's been learned so the next session can skip it.
+            const v = shown.find((x) => x.id === id);
+            if (!v) return;
+            onUpdate(id, {
+              reviews: (v.reviews ?? 0) + 1,
+              known: (v.known ?? 0) + (correct ? 1 : 0),
+            });
+          }}
         />
       ) : (
         <>
@@ -328,9 +341,19 @@ function Row({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const locale = speechLocale(findLanguage(item.lang));
-  const [tagModalOpen, setTagModalOpen] = useState(false);
+  // The card opens either on the word side (tap) or straight into stroke
+  // practice (the outline brush button).
+  const [cardOpen, setCardOpen] = useState(false);
+  const [cardStrokes, setCardStrokes] = useState(false);
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Stroke practice only for the Han-script languages (Chinese, Japanese kanji).
+  const canStrokes = usesHanzi(item.lang) && hasHanzi(item.term);
+
+  function openCard(strokes: boolean) {
+    setCardStrokes(strokes);
+    setCardOpen(true);
+  }
 
   async function copy() {
     await Clipboard.setStringAsync(
@@ -355,7 +378,7 @@ function Row({
   return (
     <SwipeRow
       onDelete={() => onRemove(item.id)}
-      onTap={() => setTagModalOpen(true)}
+      onTap={() => openCard(false)}
       deleteLabel={t('swipe.delete')}
     >
       <View style={styles.row}>
@@ -376,6 +399,16 @@ function Row({
           )}
           <TagBadges tags={item.tags} />
         </View>
+        {canStrokes && (
+          <Pressable
+            style={styles.outlineBtn}
+            onPress={() => openCard(true)}
+            hitSlop={8}
+            accessibilityLabel={t('vocab.strokes')}
+          >
+            <Ionicons name="brush-outline" size={18} color={theme.colors.accent} />
+          </Pressable>
+        )}
         <Pressable
           style={styles.copyBtn}
           onPress={generate}
@@ -412,15 +445,13 @@ function Row({
         />
       </View>
 
-      <TagModal
-        visible={tagModalOpen}
-        title={t('tagModal.title')}
-        subtitle={item.term}
-        addLabel={t('vocab.tag')}
-        tags={item.tags}
+      <WordCard
+        visible={cardOpen}
+        item={item}
         suggestions={tagSuggestions}
+        initialStrokes={cardStrokes}
         onChange={(tags) => onUpdate(item.id, { tags })}
-        onClose={() => setTagModalOpen(false)}
+        onClose={() => setCardOpen(false)}
       />
     </SwipeRow>
   );
@@ -543,6 +574,18 @@ function makeStyles(theme: Theme) {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: theme.colors.bgElevated,
+  },
+  // Outline (hollow) variant of the round row button — used for stroke order.
+  outlineBtn: {
+    marginLeft: 10,
+    width: 34,
+    height: 34,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+    backgroundColor: 'transparent',
   },
   delBtn: { paddingLeft: 12 },
   delText: { fontSize: 18 },
