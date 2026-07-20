@@ -369,6 +369,59 @@ Regeln:
   };
 }
 
+// ── Transliteration only ─────────────────────────────────────────────────────
+// Backfills the reading (Pinyin/Romaji/…) of a single word or phrase that was
+// saved without one — e.g. typed in by hand, or saved while the Pinyin toggle
+// was off. Deliberately narrower (and cheaper) than generateVocabExample.
+export async function transliterate(
+  openaiKey: string,
+  term: string,
+  goalLang: Language,
+  signal?: AbortSignal
+): Promise<string> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const system = `Du transliterierst ${goalLang.label} (${goalLang.nativeName}) in lateinische Schrift.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{ "pinyin": "<lateinische Umschrift des gegebenen Wortes/Satzes>" }
+
+Regeln:
+- Nutze das gängige System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, Russisch/Griechisch/Arabisch/Hebräisch/Thai/Hindi usw.: übliche Transliteration).
+- Nur die Umschrift, keine Übersetzung und keine Erklärung.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const { signal: s, done } = linkSignals(signal, 30000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: 200,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: term },
+        ],
+      }),
+      signal: s,
+    });
+  } finally {
+    done();
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const pinyin = typeof json?.pinyin === 'string' ? json.pinyin.trim() : '';
+  if (!pinyin) throw new Error('Keine Umschrift erhalten — bitte nochmal versuchen.');
+  return pinyin;
+}
+
 // ── Break a sentence into its individual words/terms ─────────────────────────
 // The dialogue offers a "word for word" action on a translated sentence: it
 // segments the goal-language sentence into its meaningful words/expressions so

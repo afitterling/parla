@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   SafeAreaView,
@@ -14,6 +16,7 @@ import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { useT } from '../i18n/I18nContext';
 import { VocabItem } from '../storage';
+import { transliterate } from '../api';
 import { findLanguage, speechLocale, usesHanzi } from '../languages';
 import { hasHanzi } from '../strokes';
 import { allowRotation, lockPortrait } from '../orientation';
@@ -29,7 +32,10 @@ type Props = {
   visible: boolean;
   item: VocabItem | null;
   suggestions: string[];
+  openaiKey: string;
   onChange: (tags: string[]) => void;
+  /** Persist a backfilled reading onto the word. */
+  onFillPinyin: (pinyin: string) => void;
   onClose: () => void;
   /** Open straight into stroke practice instead of the word side. */
   initialStrokes?: boolean;
@@ -39,7 +45,9 @@ export function WordCard({
   visible,
   item,
   suggestions,
+  openaiKey,
   onChange,
+  onFillPinyin,
   onClose,
   initialStrokes = false,
 }: Props) {
@@ -48,7 +56,27 @@ export function WordCard({
   const t = useT();
   const { width, height } = useWindowDimensions();
   const [strokes, setStrokes] = useState(initialStrokes);
+  const [fetchingPinyin, setFetchingPinyin] = useState(false);
   const tagsRef = useRef<TagEditorHandle>(null);
+
+  // Words saved by hand — or while the Pinyin toggle was off — carry no reading.
+  // It is fetched on demand (never automatically: that would fire an API call
+  // every time a card is opened) and handed up to be stored, so it is there next
+  // time and on the other device, via the shared store.
+  const lang = item ? findLanguage(item.lang) : null;
+  const canPinyin = !!item && !!lang?.romanize;
+
+  async function fillPinyin() {
+    if (!item || !lang || fetchingPinyin) return;
+    setFetchingPinyin(true);
+    try {
+      onFillPinyin(await transliterate(openaiKey, item.term, lang));
+    } catch (e: any) {
+      Alert.alert(t('vocab.makePinyin'), e?.message ?? String(e));
+    } finally {
+      setFetchingPinyin(false);
+    }
+  }
 
   // Reset the side we show each time the card is opened.
   useEffect(() => {
@@ -125,7 +153,44 @@ export function WordCard({
               >
                 {item.term}
               </Text>
-              {!!item.pinyin && <Text style={styles.bigPinyin}>{item.pinyin}</Text>}
+              {item.pinyin ? (
+                <View style={styles.pinyinRow}>
+                  <Text style={styles.bigPinyin}>{item.pinyin}</Text>
+                  {canPinyin && (
+                    <Pressable
+                      onPress={fillPinyin}
+                      disabled={fetchingPinyin}
+                      hitSlop={10}
+                      accessibilityLabel={t('vocab.makePinyin')}
+                    >
+                      {fetchingPinyin ? (
+                        <ActivityIndicator size="small" color={theme.colors.accent2} />
+                      ) : (
+                        <Ionicons
+                          name="refresh-outline"
+                          size={18}
+                          color={theme.colors.textFaint}
+                        />
+                      )}
+                    </Pressable>
+                  )}
+                </View>
+              ) : (
+                canPinyin && (
+                  <Pressable
+                    style={styles.makePinyinBtn}
+                    onPress={fillPinyin}
+                    disabled={fetchingPinyin}
+                  >
+                    {fetchingPinyin ? (
+                      <ActivityIndicator size="small" color={theme.colors.accent2} />
+                    ) : (
+                      <Ionicons name="sparkles-outline" size={16} color={theme.colors.accent2} />
+                    )}
+                    <Text style={styles.makePinyinText}>{t('vocab.makePinyin')}</Text>
+                  </Pressable>
+                )
+              )}
               {!!item.translation && <Text style={styles.bigTrans}>{item.translation}</Text>}
               {!!item.example && (
                 <View style={styles.exampleBlock}>
@@ -193,6 +258,19 @@ function makeStyles(theme: Theme) {
       gap: 6,
     },
     bigTerm: { color: theme.colors.text, fontWeight: '700', textAlign: 'center' },
+    pinyinRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    makePinyinBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.accent2,
+      borderRadius: theme.radius.pill,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      marginTop: 4,
+    },
+    makePinyinText: { color: theme.colors.accent2, fontWeight: '800', fontSize: 13 },
     bigPinyin: { color: theme.colors.accent2, fontSize: 22, fontWeight: '600' },
     bigTrans: { color: theme.colors.textMuted, fontSize: 20 },
     exampleBlock: { alignItems: 'center', marginTop: 10, gap: 2 },

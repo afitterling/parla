@@ -66,9 +66,9 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
     createdAt: v.createdAt,
     known: v.known ?? 0,
   }));
-  // Example gets a transliteration line only when the goal language uses one and
-  // the learner has Pinyin/Romaji turned on (same rule as the dialogue).
-  const wantPinyin = !!goalLang.romanize && settings.showPinyin;
+  // Generate the reading whenever the goal language has one; showing it is a
+  // separate, display-only setting (see the dialogue's "Aa" toggle).
+  const wantPinyin = !!goalLang.romanize;
 
   // A word still needs enrichment if it lacks an example, a translation for that
   // example, or — when the goal language is transliterated — the word's own
@@ -291,6 +291,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
               onUpdate={onUpdate}
               onGenerate={generateExample}
               tagSuggestions={tagSuggestions}
+              openaiKey={settings.openaiKey}
               t={t}
             />
           )}
@@ -329,6 +330,7 @@ function Row({
   onUpdate,
   onGenerate,
   tagSuggestions,
+  openaiKey,
   t,
 }: {
   item: VocabItem;
@@ -336,6 +338,7 @@ function Row({
   onUpdate: (id: string, patch: Partial<VocabItem>) => void;
   onGenerate: (item: VocabItem) => Promise<void>;
   tagSuggestions: string[];
+  openaiKey: string;
   t: TFn;
 }) {
   const styles = useStyles(makeStyles);
@@ -450,7 +453,9 @@ function Row({
         item={item}
         suggestions={tagSuggestions}
         initialStrokes={cardStrokes}
+        openaiKey={openaiKey}
         onChange={(tags) => onUpdate(item.id, { tags })}
+        onFillPinyin={(pinyin) => onUpdate(item.id, { pinyin })}
         onClose={() => setCardOpen(false)}
       />
     </SwipeRow>

@@ -78,7 +78,11 @@ export function DialogScreen({
   const theme = useTheme();
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
-  const wantPinyin = !!goalLang.romanize && settings.showPinyin;
+  // Always ASK the model for the reading when the goal language has one — the
+  // "Aa" toggle only decides whether it is displayed. Otherwise a phrase saved
+  // with the toggle off would be stored without its pinyin, for good.
+  const wantPinyin = !!goalLang.romanize;
+  const showPinyin = wantPinyin && settings.showPinyin;
   const [mode, setMode] = useState<Mode>(settings.defaultMode === 'ask' ? 'ask' : 'free');
   const [openMenu, setOpenMenu] = useState<'input' | 'goal' | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -431,6 +435,7 @@ export function DialogScreen({
               onAddPhrase={onAddPhrase}
               onUpdatePhrase={onUpdatePhrase}
               tagSuggestions={tagSuggestions}
+              showPinyin={showPinyin}
             />
           ) : (
             <UserBubble key={m.id} msg={m} onSave={saveTranscription} saved={saved.has(m.text)} />
@@ -523,6 +528,7 @@ function AiBubble({
   onAddPhrase,
   onUpdatePhrase,
   tagSuggestions,
+  showPinyin,
 }: {
   msg: Msg;
   onSaveVocab: (s: VocabSuggestion) => void;
@@ -533,6 +539,7 @@ function AiBubble({
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   tagSuggestions: string[];
+  showPinyin: boolean; // the "Aa" toggle — display only, the reading is always stored
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
@@ -599,7 +606,7 @@ function AiBubble({
     <View style={[styles.bubble, styles.aiBubble]}>
       <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
       <Text style={styles.aiText}>{msg.text}</Text>
-      {!!msg.pinyin && <Text style={styles.pinyin}>{msg.pinyin}</Text>}
+      {showPinyin && !!msg.pinyin && <Text style={styles.pinyin}>{msg.pinyin}</Text>}
       {!!msg.translation && <Text style={styles.translation}>{msg.translation}</Text>}
 
       {!!msg.vocab?.length && (
@@ -613,6 +620,9 @@ function AiBubble({
                 onPress={() => !isSaved && onSaveVocab(s)}
               >
                 <Text style={styles.vocabChipTerm}>{s.term}</Text>
+                {showPinyin && !!s.pinyin && (
+                  <Text style={styles.vocabChipPinyin}>{s.pinyin}</Text>
+                )}
                 <Text style={styles.vocabChipTrans}>
                   {s.translation}{' '}
                   <Ionicons
@@ -664,7 +674,9 @@ function AiBubble({
                     onPress={() => !isSaved && onSaveVocab(w)}
                   >
                     <Text style={styles.vocabChipTerm}>{w.term}</Text>
-                    {!!w.pinyin && <Text style={styles.vocabChipPinyin}>{w.pinyin}</Text>}
+                    {showPinyin && !!w.pinyin && (
+                      <Text style={styles.vocabChipPinyin}>{w.pinyin}</Text>
+                    )}
                     <Text style={styles.vocabChipTrans}>
                       {w.translation}{' '}
                       <Ionicons
