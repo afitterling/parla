@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -34,6 +35,7 @@ import {
   ChatTurn,
   DialogReply,
   transcribeAudio,
+  transliterate,
   VocabSuggestion,
 } from '../api';
 
@@ -436,6 +438,10 @@ export function DialogScreen({
               onUpdatePhrase={onUpdatePhrase}
               tagSuggestions={tagSuggestions}
               showPinyin={showPinyin}
+              openaiKey={settings.openaiKey}
+              onSetPinyin={(pinyin) =>
+                setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, pinyin } : x)))
+              }
             />
           ) : (
             <UserBubble key={m.id} msg={m} onSave={saveTranscription} saved={saved.has(m.text)} />
@@ -529,6 +535,8 @@ function AiBubble({
   onUpdatePhrase,
   tagSuggestions,
   showPinyin,
+  openaiKey,
+  onSetPinyin,
 }: {
   msg: Msg;
   onSaveVocab: (s: VocabSuggestion) => void;
@@ -540,6 +548,8 @@ function AiBubble({
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   tagSuggestions: string[];
   showPinyin: boolean; // the "Aa" toggle — display only, the reading is always stored
+  openaiKey: string;
+  onSetPinyin: (pinyin: string) => void;
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
@@ -552,6 +562,22 @@ function AiBubble({
   const [words, setWords] = useState<VocabSuggestion[] | null>(null);
   const [breaking, setBreaking] = useState(false);
   const [breakError, setBreakError] = useState<string | null>(null);
+  const [fetchingPinyin, setFetchingPinyin] = useState(false);
+  // A reply can arrive without a reading (older messages, or the model simply
+  // omitted it) — offer to fetch it here, the same way the phrase row does.
+  const canPinyin = !!findLanguage(langCode).romanize;
+
+  async function fillPinyin() {
+    if (fetchingPinyin) return;
+    setFetchingPinyin(true);
+    try {
+      onSetPinyin(await transliterate(openaiKey, msg.text, findLanguage(langCode)));
+    } catch (e: any) {
+      Alert.alert(t('vocab.makePinyin'), e?.message ?? String(e));
+    } finally {
+      setFetchingPinyin(false);
+    }
+  }
 
   async function runBreakdown() {
     if (breaking) return;
@@ -606,7 +632,21 @@ function AiBubble({
     <View style={[styles.bubble, styles.aiBubble]}>
       <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
       <Text style={styles.aiText}>{msg.text}</Text>
-      {showPinyin && !!msg.pinyin && <Text style={styles.pinyin}>{msg.pinyin}</Text>}
+      {showPinyin &&
+        (msg.pinyin ? (
+          <Text style={styles.pinyin}>{msg.pinyin}</Text>
+        ) : (
+          canPinyin && (
+            <Pressable style={styles.makePinyinBtn} onPress={fillPinyin} disabled={fetchingPinyin}>
+              {fetchingPinyin ? (
+                <ActivityIndicator size="small" color={theme.colors.accent2} />
+              ) : (
+                <Ionicons name="sparkles-outline" size={13} color={theme.colors.accent2} />
+              )}
+              <Text style={styles.makePinyinText}>{t('vocab.makePinyin')}</Text>
+            </Pressable>
+          )
+        ))}
       {!!msg.translation && <Text style={styles.translation}>{msg.translation}</Text>}
 
       {!!msg.vocab?.length && (
@@ -915,6 +955,19 @@ function makeStyles(theme: Theme) {
   },
   aiText: { color: theme.colors.text, fontSize: 18, lineHeight: 26, fontWeight: '600' },
   pinyin: { color: theme.colors.accent2, fontSize: 14, marginTop: 4, fontWeight: '500' },
+  makePinyinBtn: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.accent2,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  makePinyinText: { color: theme.colors.accent2, fontWeight: '800', fontSize: 11 },
   translation: { color: theme.colors.textMuted, fontSize: 14, marginTop: 6, fontStyle: 'italic' },
   userText: { color: theme.colors.text, fontSize: 16, lineHeight: 22 },
   userSaveRow: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 8 },

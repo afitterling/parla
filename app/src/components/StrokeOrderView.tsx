@@ -37,6 +37,8 @@ export function StrokeOrderView({ term, size = 260 }: Props) {
 
   const [data, setData] = useState<StrokeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
+  const [warningClosed, setWarningClosed] = useState(false);
   const [index, setIndex] = useState(0); // stroke currently being drawn
   const [progress, setProgress] = useState(0); // 0…1 within that stroke
   const [playing, setPlaying] = useState(true);
@@ -49,11 +51,20 @@ export function StrokeOrderView({ term, size = 260 }: Props) {
     setIndex(0);
     setProgress(0);
     setPlaying(true);
-    loadStrokeData(char).then((d) => {
-      if (!active) return;
-      setData(d);
-      setLoading(false);
-    });
+    setOffline(false);
+    setWarningClosed(false);
+    loadStrokeData(char)
+      .then((d) => {
+        if (!active) return;
+        setData(d);
+        setLoading(false);
+      })
+      .catch(() => {
+        // No cached copy and the CDN is unreachable — idle, and say why.
+        if (!active) return;
+        setOffline(true);
+        setLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -215,8 +226,25 @@ export function StrokeOrderView({ term, size = 260 }: Props) {
         )}
         {!loading && total === 0 && (
           <View style={styles.overlay}>
-            <Ionicons name="help-circle-outline" size={28} color={theme.colors.textFaint} />
-            <Text style={styles.unavailable}>{t('strokes.unavailable')}</Text>
+            <Ionicons
+              name={offline ? 'cloud-offline-outline' : 'help-circle-outline'}
+              size={28}
+              color={theme.colors.textFaint}
+            />
+            <Text style={styles.unavailable}>
+              {offline ? t('strokes.offlineIdle') : t('strokes.unavailable')}
+            </Text>
+          </View>
+        )}
+
+        {/* Connection warning — dismissable, the idle state stays behind it. */}
+        {offline && !warningClosed && (
+          <View style={styles.warning}>
+            <Ionicons name="warning-outline" size={16} color={theme.colors.danger} />
+            <Text style={styles.warningText}>{t('strokes.offline')}</Text>
+            <Pressable onPress={() => setWarningClosed(true)} hitSlop={10}>
+              <Ionicons name="close" size={16} color={theme.colors.textMuted} />
+            </Pressable>
           </View>
         )}
       </View>
@@ -281,6 +309,22 @@ function makeStyles(theme: Theme) {
       textAlign: 'center',
       paddingHorizontal: 20,
     },
+    warning: {
+      position: 'absolute',
+      left: 8,
+      right: 8,
+      top: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: theme.colors.card,
+      borderWidth: 1,
+      borderColor: theme.colors.danger,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    warningText: { flex: 1, color: theme.colors.text, fontSize: 12, fontWeight: '600' },
     controls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     ctrlBtn: {
       width: 36,

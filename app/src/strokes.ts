@@ -59,9 +59,18 @@ function isStrokeData(value: any): value is StrokeData {
   );
 }
 
+// Thrown when the character isn't cached and the CDN can't be reached, so the
+// UI can say "no connection" instead of the misleading "no stroke data".
+export class StrokesOfflineError extends Error {
+  constructor() {
+    super('offline');
+    this.name = 'StrokesOfflineError';
+  }
+}
+
 // Load one character's stroke data: memory → disk cache → network.
-// Returns null when the character isn't in the dataset or we're offline with a
-// cold cache, so the UI can say "no stroke data" instead of failing.
+// Returns null when the character simply isn't in the dataset; throws
+// StrokesOfflineError when it could not be fetched at all.
 export async function loadStrokeData(char: string): Promise<StrokeData | null> {
   if (memory.has(char)) return memory.get(char)!;
 
@@ -103,7 +112,7 @@ export async function loadStrokeData(char: string): Promise<StrokeData | null> {
     return data;
   } catch {
     // Offline / network error — don't remember it, a later try may succeed.
-    return null;
+    throw new StrokesOfflineError();
   }
 }
 

@@ -4,6 +4,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,8 @@ type TagModalProps = {
   visible: boolean;
   title: string; // header (e.g. "Tags")
   subtitle: string; // the term / phrase being tagged
+  subtitlePinyin?: string; // its reading, shown under the phrase when there is one
+  subtitleTranslation?: string; // what it means, under the reading
   addLabel: string; // label on the "add tag" chip
   tags: string[]; // currently assigned tags
   suggestions: string[]; // recently used tags to offer as chips
@@ -34,6 +37,8 @@ export function TagModal({
   visible,
   title,
   subtitle,
+  subtitlePinyin,
+  subtitleTranslation,
   addLabel,
   tags,
   suggestions,
@@ -41,6 +46,7 @@ export function TagModal({
   onClose,
 }: TagModalProps) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const t = useT();
   const editorRef = useRef<TagEditorHandle>(null);
 
@@ -50,31 +56,64 @@ export function TagModal({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={closeModal}>
-      <Pressable style={styles.modalBackdrop} onPress={closeModal}>
-        <Pressable style={styles.modalCard} onPress={() => {}}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={closeModal}
+    >
+      {/* Full screen rather than a centred card: a phrase with many tags had to
+          scroll inside a box that was itself already scrolling. SafeAreaView
+          keeps the header clear of the notch, matching App.tsx. */}
+      <SafeAreaView style={styles.fullScreen}>
+        {/* Title left, close top right — the only way out now that there is no
+            backdrop to tap. */}
+        <View style={styles.header}>
           <Text style={styles.modalTitle}>{title}</Text>
-          <Text style={styles.modalPhrase} numberOfLines={2}>
+          <Pressable
+            style={styles.closeIconBtn}
+            onPress={closeModal}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t('tagModal.close')}
+          >
+            <Ionicons name="close" size={24} color={theme.colors.text} />
+          </Pressable>
+        </View>
+
+        {/* flexGrow + centre: the phrase is the point of this screen, so it sits
+            in the middle at reading size rather than tucked in the top corner.
+            Long phrases and many tags still push it back to a normal scroll. */}
+        <ScrollView
+          style={styles.modalScroll}
+          contentContainerStyle={styles.modalScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={[styles.modalPhrase, !!subtitlePinyin && styles.modalPhraseTight]}>
             {subtitle}
           </Text>
+          {/* The row this sheet opens from shows the reading, so the sheet does
+              too — otherwise tapping a phrase loses the one thing you cannot
+              recover by looking at the characters. */}
+          {!!subtitlePinyin && <Text style={styles.modalPinyin}>{subtitlePinyin}</Text>}
+          {/* Characters, reading, meaning — the three things the row shows, in
+              the same order, so the sheet is the row writ large. */}
+          {!!subtitleTranslation && (
+            <Text style={styles.modalTranslation}>{subtitleTranslation}</Text>
+          )}
 
-          {/* Many tags outgrow a phone screen — scroll them inside the card so
-              the title and the close button stay put. */}
-          <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.editorWrap}>
             <TagEditor
               ref={editorRef}
               addLabel={addLabel}
               tags={tags}
               suggestions={suggestions}
               onChange={onChange}
+              centered
             />
-          </ScrollView>
-
-          <Pressable style={styles.modalCloseBtn} onPress={closeModal}>
-            <Text style={styles.modalCloseText}>{t('tagModal.close')}</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -88,10 +127,13 @@ type TagEditorProps = {
   tags: string[];
   suggestions: string[];
   onChange: (tags: string[]) => void;
+  // Opt-in: centres the chips instead of running them from the left. Only the
+  // full-screen phrase sheet wants this — WordCard keeps the left-aligned row.
+  centered?: boolean;
 };
 
 export const TagEditor = forwardRef<TagEditorHandle, TagEditorProps>(function TagEditor(
-  { addLabel, tags, suggestions, onChange },
+  { addLabel, tags, suggestions, onChange, centered },
   ref
 ) {
   const styles = useStyles(makeStyles);
@@ -141,7 +183,7 @@ export const TagEditor = forwardRef<TagEditorHandle, TagEditorProps>(function Ta
   }
 
   return (
-    <View style={styles.tagEditRow}>
+    <View style={[styles.tagEditRow, centered && styles.tagEditRowCentered]}>
       {chipTags.map((tag) => {
         const on = tags.some((tg) => tg.toLowerCase() === tag.toLowerCase());
         return (
@@ -209,6 +251,7 @@ function makeStyles(theme: Theme) {
   tagBadgeText: { color: theme.colors.accent2, fontSize: 11, fontWeight: '700' },
 
   tagEditRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 10 },
+  tagEditRowCentered: { justifyContent: 'center' },
   tagChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -238,34 +281,53 @@ function makeStyles(theme: Theme) {
     backgroundColor: theme.colors.bgElevated,
   },
 
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: '#000000AA',
+  fullScreen: { flex: 1, backgroundColor: theme.colors.bg, paddingHorizontal: 20 },
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  // Negative margin pulls the tap target's padding back to the screen edge so
+  // the glyph itself stays optically aligned with the content below it.
+  closeIconBtn: { padding: 6, marginRight: -6 },
+  modalScroll: { flex: 1 },
+  modalScrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    padding: 20,
-    // Never taller than the screen — the tag list inside scrolls instead.
-    maxHeight: '100%',
-  },
-  modalScroll: { flexShrink: 1 },
-  modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800' },
-  modalPhrase: { color: theme.colors.textMuted, fontSize: 14, marginTop: 4, marginBottom: 14 },
-  modalCloseBtn: {
-    marginTop: 20,
-    backgroundColor: theme.colors.accent,
-    paddingVertical: 13,
-    borderRadius: theme.radius.pill,
     alignItems: 'center',
+    paddingBottom: 24,
   },
-  modalCloseText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800' },
+  // The phrase is the hero here, not a subtitle: full text colour, display size.
+  modalPhrase: {
+    color: theme.colors.text,
+    fontSize: 30,
+    lineHeight: 40,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  // The reading takes over the gap below the phrase so the two read as one block.
+  modalPhraseTight: { marginBottom: 0 },
+  modalPinyin: {
+    color: theme.colors.accent2,
+    fontSize: 20,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  modalTranslation: {
+    color: theme.colors.textMuted,
+    fontSize: 18,
+    lineHeight: 25,
+    textAlign: 'center',
+    marginBottom: 22,
+  },
+  // Full width so the centred chip row has room to centre within, and to wrap.
+  editorWrap: { width: '100%' },
   });
 }

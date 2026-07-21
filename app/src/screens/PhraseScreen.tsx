@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -17,6 +18,7 @@ import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { AnswerMode, PhraseItem, Settings, loadQuizPrefs, recentTags, saveQuizPrefs } from '../storage';
 import { answerMatches } from '../answers';
+import { transliterate } from '../api';
 import { ExportFormat, exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
@@ -132,6 +134,7 @@ export function PhraseScreen({
           onUpdate={onUpdate}
           tagSuggestions={tags}
           onLearn={startLearn}
+          openaiKey={settings.openaiKey}
         />
       )}
       {view === 'train' && (
@@ -157,7 +160,8 @@ function ListView({
   onUpdate,
   tagSuggestions,
   onLearn,
-}: Props & { onLearn: (item: PhraseItem) => void }) {
+  openaiKey,
+}: Props & { onLearn: (item: PhraseItem) => void; openaiKey: string }) {
   const t = useT();
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -258,6 +262,7 @@ function ListView({
               onUpdate={onUpdate}
               tagSuggestions={tagSuggestions}
               onLearn={onLearn}
+              openaiKey={openaiKey}
             />
           )}
           ListEmptyComponent={<Text style={styles.noMatch}>{t('phrase.noMatch')}</Text>}
@@ -281,6 +286,7 @@ function ListView({
               onUpdate={onUpdate}
               tagSuggestions={tagSuggestions}
               onLearn={onLearn}
+              openaiKey={openaiKey}
             />
           )}
           ListEmptyComponent={<Text style={styles.noMatch}>{t('phrase.noMatch')}</Text>}
@@ -296,16 +302,35 @@ function PhraseRow({
   onUpdate,
   tagSuggestions,
   onLearn,
+  openaiKey,
 }: {
   item: PhraseItem;
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<PhraseItem>) => void;
   tagSuggestions: string[];
   onLearn: (item: PhraseItem) => void;
+  openaiKey: string;
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const [tagModalOpen, setTagModalOpen] = useState(false);
+  const [fetchingPinyin, setFetchingPinyin] = useState(false);
+  // Phrases saved before the reading was stored unconditionally have none —
+  // offer to fetch it, the same way the vocabulary word card does.
+  const canPinyin = !!findLanguage(item.lang).romanize;
+
+  async function fillPinyin() {
+    if (fetchingPinyin) return;
+    setFetchingPinyin(true);
+    try {
+      onUpdate(item.id, { pinyin: await transliterate(openaiKey, item.target, findLanguage(item.lang)) });
+    } catch (e: any) {
+      Alert.alert(t('vocab.makePinyin'), e?.message ?? String(e));
+    } finally {
+      setFetchingPinyin(false);
+    }
+  }
 
   return (
     <SwipeRow
@@ -322,7 +347,20 @@ function PhraseRow({
           style={styles.speakBtn}
         />
         <Text style={[styles.target, styles.targetWithSpeak]}>{item.target}</Text>
-        {!!item.pinyin && <Text style={styles.pinyin}>{item.pinyin}</Text>}
+        {item.pinyin ? (
+          <Text style={styles.pinyin}>{item.pinyin}</Text>
+        ) : (
+          canPinyin && (
+            <Pressable style={styles.makePinyinBtn} onPress={fillPinyin} disabled={fetchingPinyin}>
+              {fetchingPinyin ? (
+                <ActivityIndicator size="small" color={theme.colors.accent2} />
+              ) : (
+                <Ionicons name="sparkles-outline" size={13} color={theme.colors.accent2} />
+              )}
+              <Text style={styles.makePinyinText}>{t('vocab.makePinyin')}</Text>
+            </Pressable>
+          )
+        )}
         {!!item.translation && <Text style={styles.trans}>{item.translation}</Text>}
 
         <TagBadges tags={item.tags} />
@@ -337,6 +375,8 @@ function PhraseRow({
           visible={tagModalOpen}
           title={t('tagModal.title')}
           subtitle={item.target}
+          subtitlePinyin={item.pinyin}
+          subtitleTranslation={item.translation}
           addLabel={t('phrase.tag')}
           tags={item.tags}
           suggestions={tagSuggestions}
@@ -913,6 +953,19 @@ function makeStyles(theme: Theme) {
   target: { color: theme.colors.text, fontSize: 18, fontWeight: '700', lineHeight: 25 },
   targetWithSpeak: { paddingRight: 44 },
   pinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: 2, fontWeight: '500' },
+  makePinyinBtn: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.accent2,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  makePinyinText: { color: theme.colors.accent2, fontWeight: '800', fontSize: 11 },
   trans: { color: theme.colors.textMuted, fontSize: 14, marginTop: 3 },
 
   stat: { color: theme.colors.textFaint, fontSize: 12 },
