@@ -17,8 +17,9 @@ import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
-import { generateVocabExample } from '../api';
+import { generateVocabExample, transcribeAudio } from '../api';
 import { findLanguage, speechLocale, usesHanzi } from '../languages';
+import { useRecorder } from '../useRecorder';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges } from '../components/TagModal';
@@ -46,6 +47,8 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const [adding, setAdding] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [mode, setMode] = useState<'list' | 'quiz'>('list');
+  const recorder = useRecorder();
+  const [transcribing, setTranscribing] = useState(false);
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
@@ -125,6 +128,35 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
       { text: t('common.cancel'), style: 'cancel' },
       { text: t('common.ok'), onPress: generateAllMissing },
     ]);
+  }
+
+  // Speak the word instead of typing it: tap to record, tap again to stop and
+  // transcribe with Whisper in the goal language, then drop the text into the
+  // word field (still editable before saving).
+  async function onMicPress() {
+    if (recorder.state === 'recording') {
+      try {
+        setTranscribing(true);
+        const uri = await recorder.stop();
+        if (uri) {
+          const text = await transcribeAudio(uri, settings.openaiKey, goalLang);
+          // Whisper punctuates like a sentence — strip that for a vocab entry.
+          const cleaned = text.replace(/[。．.．!！?？,，、;；]+$/gu, '').trim();
+          if (cleaned) setTerm(cleaned);
+          else Alert.alert(t('vocab.speakWord'), t('dialog.errorNoSpeech'));
+        }
+      } catch (e: any) {
+        Alert.alert(t('vocab.speakWord'), e?.message ?? String(e));
+      } finally {
+        setTranscribing(false);
+      }
+    } else {
+      try {
+        await recorder.start();
+      } catch (e: any) {
+        Alert.alert(t('vocab.speakWord'), e?.message ?? t('dialog.errorRecording'));
+      }
+    }
   }
 
   function submit() {
@@ -245,16 +277,35 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
         <>
       {adding && (
         <View style={styles.addCard}>
-          <TextInput
-            style={styles.input}
-            placeholder={t('vocab.wordPlaceholder', {
-              lang: findLanguage(settings.goalLanguage).nativeName,
-            })}
-            placeholderTextColor={theme.colors.textFaint}
-            value={term}
-            onChangeText={setTerm}
-            autoFocus
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, styles.inputFlex]}
+              placeholder={t('vocab.wordPlaceholder', {
+                lang: findLanguage(settings.goalLanguage).nativeName,
+              })}
+              placeholderTextColor={theme.colors.textFaint}
+              value={term}
+              onChangeText={setTerm}
+              autoFocus
+            />
+            <Pressable
+              style={[styles.micBtn, recorder.state === 'recording' && styles.micBtnActive]}
+              onPress={onMicPress}
+              disabled={transcribing}
+              hitSlop={8}
+              accessibilityLabel={t('vocab.speakWord')}
+            >
+              {transcribing ? (
+                <ActivityIndicator size="small" color={theme.colors.accent} />
+              ) : (
+                <Ionicons
+                  name={recorder.state === 'recording' ? 'stop' : 'mic-outline'}
+                  size={18}
+                  color={recorder.state === 'recording' ? '#fff' : theme.colors.accent}
+                />
+              )}
+            </Pressable>
+          </View>
           <TextInput
             style={styles.input}
             placeholder={t('vocab.translationPlaceholder', {
@@ -541,6 +592,17 @@ function makeStyles(theme: Theme) {
     color: theme.colors.text,
     fontSize: 15,
   },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inputFlex: { flex: 1 },
+  micBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentDim,
+  },
+  micBtnActive: { backgroundColor: theme.colors.danger },
   saveBtn: {
     backgroundColor: theme.colors.accent2,
     borderRadius: theme.radius.sm,
