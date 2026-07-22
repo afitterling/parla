@@ -121,11 +121,6 @@ export default function App() {
     });
   }
 
-  function setShowPinyin(value: boolean) {
-    if (!settings) return;
-    handleSaveSettings({ ...settings, showPinyin: value });
-  }
-
   function setPro(value: boolean) {
     if (!settings) return;
     handleSaveSettings({ ...settings, isPro: value });
@@ -294,7 +289,6 @@ export default function App() {
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
             onSwapLanguages={swapLanguages}
-            onSetShowPinyin={setShowPinyin}
             onPurchasePro={purchasePro}
             tagSuggestions={recentTags(phrases)}
           />

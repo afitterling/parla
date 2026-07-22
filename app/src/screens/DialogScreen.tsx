@@ -58,7 +58,6 @@ type Props = {
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
   onSwapLanguages: () => void;
-  onSetShowPinyin: (value: boolean) => void;
   onPurchasePro: () => void;
   tagSuggestions: string[];
 };
@@ -71,7 +70,6 @@ export function DialogScreen({
   onChangeInputLanguage,
   onChangeGoalLanguage,
   onSwapLanguages,
-  onSetShowPinyin,
   onPurchasePro,
   tagSuggestions,
 }: Props) {
@@ -80,11 +78,10 @@ export function DialogScreen({
   const theme = useTheme();
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
-  // Always ASK the model for the reading when the goal language has one — the
-  // "Aa" toggle only decides whether it is displayed. Otherwise a phrase saved
-  // with the toggle off would be stored without its pinyin, for good.
+  // Ask the model for the reading whenever the goal language has one — it is
+  // always stored and always displayed, same as on the Phrases/Vocabulary
+  // screens.
   const wantPinyin = !!goalLang.romanize;
-  const showPinyin = wantPinyin && settings.showPinyin;
   const [mode, setMode] = useState<Mode>(settings.defaultMode === 'ask' ? 'ask' : 'free');
   const [openMenu, setOpenMenu] = useState<'input' | 'goal' | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -378,19 +375,6 @@ export function DialogScreen({
             color={theme.colors.textMuted}
           />
         </Pressable>
-        {goalLang.romanize && (
-          <Pressable
-            style={[styles.pinyinToggle, settings.showPinyin && styles.pinyinToggleOn]}
-            onPress={() => onSetShowPinyin(!settings.showPinyin)}
-            accessibilityLabel={t('dialog.romanize')}
-          >
-            <Text
-              style={[styles.pinyinToggleText, settings.showPinyin && styles.pinyinToggleTextOn]}
-            >
-              Aa
-            </Text>
-          </Pressable>
-        )}
       </View>
 
       <LanguagePicker
@@ -437,7 +421,6 @@ export function DialogScreen({
               onAddPhrase={onAddPhrase}
               onUpdatePhrase={onUpdatePhrase}
               tagSuggestions={tagSuggestions}
-              showPinyin={showPinyin}
               openaiKey={settings.openaiKey}
               onSetPinyin={(pinyin) =>
                 setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, pinyin } : x)))
@@ -534,7 +517,6 @@ function AiBubble({
   onAddPhrase,
   onUpdatePhrase,
   tagSuggestions,
-  showPinyin,
   openaiKey,
   onSetPinyin,
 }: {
@@ -547,7 +529,6 @@ function AiBubble({
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   tagSuggestions: string[];
-  showPinyin: boolean; // the "Aa" toggle — display only, the reading is always stored
   openaiKey: string;
   onSetPinyin: (pinyin: string) => void;
 }) {
@@ -632,21 +613,20 @@ function AiBubble({
     <View style={[styles.bubble, styles.aiBubble]}>
       <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
       <Text style={styles.aiText}>{msg.text}</Text>
-      {showPinyin &&
-        (msg.pinyin ? (
-          <Text style={styles.pinyin}>{msg.pinyin}</Text>
-        ) : (
-          canPinyin && (
-            <Pressable style={styles.makePinyinBtn} onPress={fillPinyin} disabled={fetchingPinyin}>
-              {fetchingPinyin ? (
-                <ActivityIndicator size="small" color={theme.colors.accent2} />
-              ) : (
-                <Ionicons name="sparkles-outline" size={13} color={theme.colors.accent2} />
-              )}
-              <Text style={styles.makePinyinText}>{t('vocab.makePinyin')}</Text>
-            </Pressable>
-          )
-        ))}
+      {msg.pinyin ? (
+        <Text style={styles.pinyin}>{msg.pinyin}</Text>
+      ) : (
+        canPinyin && (
+          <Pressable style={styles.makePinyinBtn} onPress={fillPinyin} disabled={fetchingPinyin}>
+            {fetchingPinyin ? (
+              <ActivityIndicator size="small" color={theme.colors.accent2} />
+            ) : (
+              <Ionicons name="sparkles-outline" size={13} color={theme.colors.accent2} />
+            )}
+            <Text style={styles.makePinyinText}>{t('vocab.makePinyin')}</Text>
+          </Pressable>
+        )
+      )}
       {!!msg.translation && <Text style={styles.translation}>{msg.translation}</Text>}
 
       {!!msg.vocab?.length && (
@@ -660,9 +640,7 @@ function AiBubble({
                 onPress={() => !isSaved && onSaveVocab(s)}
               >
                 <Text style={styles.vocabChipTerm}>{s.term}</Text>
-                {showPinyin && !!s.pinyin && (
-                  <Text style={styles.vocabChipPinyin}>{s.pinyin}</Text>
-                )}
+                {!!s.pinyin && <Text style={styles.vocabChipPinyin}>{s.pinyin}</Text>}
                 <Text style={styles.vocabChipTrans}>
                   {s.translation}{' '}
                   <Ionicons
@@ -714,9 +692,7 @@ function AiBubble({
                     onPress={() => !isSaved && onSaveVocab(w)}
                   >
                     <Text style={styles.vocabChipTerm}>{w.term}</Text>
-                    {showPinyin && !!w.pinyin && (
-                      <Text style={styles.vocabChipPinyin}>{w.pinyin}</Text>
-                    )}
+                    {!!w.pinyin && <Text style={styles.vocabChipPinyin}>{w.pinyin}</Text>}
                     <Text style={styles.vocabChipTrans}>
                       {w.translation}{' '}
                       <Ionicons
@@ -892,19 +868,6 @@ function makeStyles(theme: Theme) {
     justifyContent: 'center',
     backgroundColor: theme.colors.accentDim,
   },
-  pinyinToggle: {
-    width: 38,
-    height: 38,
-    borderRadius: theme.radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.bgElevated,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-  },
-  pinyinToggleOn: { borderColor: theme.colors.accent2, backgroundColor: theme.colors.accent2Dim },
-  pinyinToggleText: { color: theme.colors.textFaint, fontSize: 16, fontWeight: '800' },
-  pinyinToggleTextOn: { color: theme.colors.accent2 },
   langChipText: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: '600' },
 
   scroll: { flex: 1 },

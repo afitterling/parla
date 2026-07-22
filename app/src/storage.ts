@@ -56,7 +56,6 @@ export type Settings = {
   openaiKey: string;
   inputLanguage: string; // what the learner speaks (Whisper transcription)
   goalLanguage: string; // the language being learned (Parla speaks/teaches)
-  showPinyin: boolean; // show Pinyin/Romaji line for Asian goal languages
   isPro: boolean; // Parla Pro — removes the free-tier rate limit
   uiLanguage: string; // app UI language: a UiLang code or 'auto' (device locale)
   defaultMode: 'free' | 'ask'; // which dialog mode starts active: 'free'=Interpreter, 'ask'=Coach
@@ -248,7 +247,6 @@ export async function loadSettings(): Promise<Settings> {
     inputLanguage: stored.inputLanguage || 'de',
     // migrate the old single `language` field → goal language
     goalLanguage: stored.goalLanguage || stored.language || 'zh',
-    showPinyin: stored.showPinyin ?? true,
     isPro: stored.isPro ?? false,
     uiLanguage: stored.uiLanguage || 'auto',
     defaultMode: stored.defaultMode === 'ask' ? 'ask' : 'free',
