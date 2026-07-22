@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { LANGUAGES } from '../languages';
+import { LANGUAGES, Language } from '../languages';
 import { useT } from '../i18n/I18nContext';
 
 // Searchable, scrollable language picker shared by Settings and the Dialog bar.
@@ -25,7 +25,14 @@ type Props = {
   selectedCode: string;
   onSelect: (code: string) => void;
   onClose: () => void;
+  // Languages the learner already has content in. When given (and not
+  // searching), they appear in an "Existing content" section on top and the
+  // remaining languages follow under "All languages".
+  priorityCodes?: string[];
 };
+
+// Flat rows for the FlatList: section headers mixed into the language rows.
+type Row = { kind: 'header'; title: string } | { kind: 'lang'; lang: Language };
 
 // Lowercase + strip diacritics so "espanol" matches "Español".
 function fold(s: string): string {
@@ -35,22 +42,45 @@ function fold(s: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-export function LanguagePicker({ visible, title, selectedCode, onSelect, onClose }: Props) {
+export function LanguagePicker({
+  visible,
+  title,
+  selectedCode,
+  onSelect,
+  onClose,
+  priorityCodes,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const t = useT();
   const [query, setQuery] = useState('');
 
-  const results = useMemo(() => {
+  const results = useMemo<Row[]>(() => {
     const q = fold(query.trim());
-    if (!q) return LANGUAGES;
-    return LANGUAGES.filter(
-      (l) =>
-        fold(l.nativeName).includes(q) ||
-        fold(l.label).includes(q) ||
-        l.code.toLowerCase().includes(q)
-    );
-  }, [query]);
+    if (q) {
+      // Searching flattens the sections — match across the whole list.
+      return LANGUAGES.filter(
+        (l) =>
+          fold(l.nativeName).includes(q) ||
+          fold(l.label).includes(q) ||
+          l.code.toLowerCase().includes(q)
+      ).map((lang) => ({ kind: 'lang' as const, lang }));
+    }
+    const priority = (priorityCodes ?? [])
+      .map((code) => LANGUAGES.find((l) => l.code === code))
+      .filter((l): l is Language => !!l);
+    if (priority.length === 0) return LANGUAGES.map((lang) => ({ kind: 'lang' as const, lang }));
+    const inPriority = new Set(priority.map((l) => l.code));
+    return [
+      { kind: 'header' as const, title: t('langPicker.existing') },
+      ...priority.map((lang) => ({ kind: 'lang' as const, lang })),
+      { kind: 'header' as const, title: t('langPicker.all') },
+      ...LANGUAGES.filter((l) => !inPriority.has(l.code)).map((lang) => ({
+        kind: 'lang' as const,
+        lang,
+      })),
+    ];
+  }, [query, priorityCodes, t]);
 
   function close() {
     setQuery('');
@@ -87,27 +117,31 @@ export function LanguagePicker({ visible, title, selectedCode, onSelect, onClose
 
             <FlatList
               data={results}
-              keyExtractor={(l) => l.code}
+              keyExtractor={(row) => (row.kind === 'header' ? `header-${row.title}` : row.lang.code)}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.list}
               initialNumToRender={20}
               ListEmptyComponent={<Text style={styles.noMatch}>{t('langPicker.noMatch')}</Text>}
               renderItem={({ item }) => {
-                const active = item.code === selectedCode;
+                if (item.kind === 'header') {
+                  return <Text style={styles.sectionHeader}>{item.title}</Text>;
+                }
+                const { lang } = item;
+                const active = lang.code === selectedCode;
                 return (
                   <Pressable
                     style={[styles.row, active && styles.rowActive]}
                     onPress={() => {
-                      onSelect(item.code);
+                      onSelect(lang.code);
                       close();
                     }}
                   >
-                    <Text style={styles.flag}>{item.flag}</Text>
+                    <Text style={styles.flag}>{lang.flag}</Text>
                     <View style={styles.rowText}>
                       <Text style={[styles.native, active && styles.nativeActive]}>
-                        {item.nativeName}
+                        {lang.nativeName}
                       </Text>
-                      <Text style={styles.label}>{item.label}</Text>
+                      <Text style={styles.label}>{lang.label}</Text>
                     </View>
                     {active && <Ionicons name="checkmark" size={18} color={theme.colors.accent} />}
                   </Pressable>
@@ -160,6 +194,16 @@ function makeStyles(theme: Theme) {
       paddingVertical: Platform.OS === 'ios' ? 11 : 7,
     },
     list: { paddingBottom: 8 },
+    sectionHeader: {
+      color: theme.colors.textFaint,
+      fontSize: 11,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      paddingHorizontal: 8,
+      paddingTop: 14,
+      paddingBottom: 4,
+    },
     row: {
       flexDirection: 'row',
       alignItems: 'center',

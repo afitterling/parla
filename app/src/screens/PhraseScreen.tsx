@@ -377,6 +377,7 @@ function PhraseRow({
           subtitle={item.target}
           subtitlePinyin={item.pinyin}
           subtitleTranslation={item.translation}
+          speakLocale={speechLocale(findLanguage(item.lang))}
           addLabel={t('phrase.tag')}
           tags={item.tags}
           suggestions={tagSuggestions}

@@ -60,6 +60,7 @@ type Props = {
   onSwapLanguages: () => void;
   onPurchasePro: () => void;
   tagSuggestions: string[];
+  contentLangCodes: string[]; // languages with saved content — shown on top of the input picker
 };
 
 export function DialogScreen({
@@ -72,12 +73,18 @@ export function DialogScreen({
   onSwapLanguages,
   onPurchasePro,
   tagSuggestions,
+  contentLangCodes,
 }: Props) {
   const t = useT();
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
+  // Goal languages the learner has content in together with the current input
+  // language — the goal picker surfaces these under "Existing content".
+  const goalContentCodes = Array.from(
+    new Set(settings.recentPairs.filter((p) => p.input === inputLang.code).map((p) => p.goal))
+  );
   // Ask the model for the reading whenever the goal language has one — it is
   // always stored and always displayed, same as on the Phrases/Vocabulary
   // screens.
@@ -381,6 +388,9 @@ export function DialogScreen({
         visible={openMenu !== null}
         title={openMenu === 'input' ? t('dialog.iSpeak') : t('dialog.iLearn')}
         selectedCode={openMenu === 'input' ? inputLang.code : goalLang.code}
+        // "I speak": every language with saved content. Goal: only the goal
+        // languages that have content paired with the current input language.
+        priorityCodes={openMenu === 'input' ? contentLangCodes : goalContentCodes}
         onSelect={(code) =>
           openMenu === 'input' ? onChangeInputLanguage(code) : onChangeGoalLanguage(code)
         }

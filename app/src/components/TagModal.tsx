@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { useT } from '../i18n/I18nContext';
+import { SpeakButton } from './SpeakButton';
 
 // A tap-to-edit tag picker shared by the Phrase and Vocab rows: toggleable
 // suggestion chips plus a free-text "add tag" field. Assigning is immediate;
@@ -26,6 +27,7 @@ type TagModalProps = {
   subtitle: string; // the term / phrase being tagged
   subtitlePinyin?: string; // its reading, shown under the phrase when there is one
   subtitleTranslation?: string; // what it means, under the reading
+  speakLocale?: string; // BCP-47 voice; when set, a speak button reads the phrase aloud
   addLabel: string; // label on the "add tag" chip
   tags: string[]; // currently assigned tags
   suggestions: string[]; // recently used tags to offer as chips
@@ -39,6 +41,7 @@ export function TagModal({
   subtitle,
   subtitlePinyin,
   subtitleTranslation,
+  speakLocale,
   addLabel,
   tags,
   suggestions,
@@ -70,15 +73,20 @@ export function TagModal({
             backdrop to tap. */}
         <View style={styles.header}>
           <Text style={styles.modalTitle}>{title}</Text>
-          <Pressable
-            style={styles.closeIconBtn}
-            onPress={closeModal}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel={t('tagModal.close')}
-          >
-            <Ionicons name="close" size={24} color={theme.colors.text} />
-          </Pressable>
+          <View style={styles.headerRight}>
+            {/* Same read-aloud as the row and the vocab card — the full-screen
+                view is where the learner actually studies the phrase. */}
+            {!!speakLocale && <SpeakButton text={subtitle} locale={speakLocale} />}
+            <Pressable
+              style={styles.closeIconBtn}
+              onPress={closeModal}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={t('tagModal.close')}
+            >
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </Pressable>
+          </View>
         </View>
 
         {/* flexGrow + centre: the phrase is the point of this screen, so it sits
@@ -291,6 +299,7 @@ function makeStyles(theme: Theme) {
   },
   // Negative margin pulls the tap target's padding back to the screen edge so
   // the glyph itself stays optically aligned with the content below it.
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   closeIconBtn: { padding: 6, marginRight: -6 },
   modalScroll: { flex: 1 },
   modalScrollContent: {

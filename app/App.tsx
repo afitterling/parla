@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Theme, themeFor } from './src/theme';
 import { ThemeProvider, resolveThemeMode } from './src/ThemeContext';
 import {
+  addLearnLanguage,
+  contentLanguages,
   loadPhrases,
   loadSettings,
   loadVocab,
@@ -81,7 +83,11 @@ export default function App() {
 
   function changeGoalLanguage(code: string) {
     if (!settings) return;
-    handleSaveSettings({ ...settings, goalLanguage: code });
+    handleSaveSettings({
+      ...settings,
+      goalLanguage: code,
+      learnLanguages: addLearnLanguage(settings.learnLanguages, code),
+    });
   }
 
   // Flip the spoken (input) and learned (goal) languages in one write — chaining
@@ -93,13 +99,36 @@ export default function App() {
       ...settings,
       inputLanguage: settings.goalLanguage,
       goalLanguage: settings.inputLanguage,
+      learnLanguages: addLearnLanguage(settings.learnLanguages, settings.inputLanguage),
     });
   }
 
   // Switch both languages at once from the header's quick menu.
   function usePair(input: string, goal: string) {
     if (!settings) return;
-    handleSaveSettings({ ...settings, inputLanguage: input, goalLanguage: goal });
+    handleSaveSettings({
+      ...settings,
+      inputLanguage: input,
+      goalLanguage: goal,
+      learnLanguages: addLearnLanguage(settings.learnLanguages, goal),
+    });
+  }
+
+  // Settings → "Languages I learn": manual add/remove of the learn set.
+  function addLearnLang(code: string) {
+    if (!settings) return;
+    handleSaveSettings({
+      ...settings,
+      learnLanguages: addLearnLanguage(settings.learnLanguages, code),
+    });
+  }
+
+  function removeLearnLang(code: string) {
+    if (!settings) return;
+    handleSaveSettings({
+      ...settings,
+      learnLanguages: settings.learnLanguages.filter((c) => c !== code),
+    });
   }
 
   // Saving a word or a phrase marks the current pair as one the learner actually
@@ -291,6 +320,7 @@ export default function App() {
             onSwapLanguages={swapLanguages}
             onPurchasePro={purchasePro}
             tagSuggestions={recentTags(phrases)}
+            contentLangCodes={contentLanguages(settings.recentPairs, vocab, phrases)}
           />
         )}
         {tab === 'vocab' && (
@@ -317,6 +347,8 @@ export default function App() {
             settings={settings}
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
+            onAddLearnLanguage={addLearnLang}
+            onRemoveLearnLanguage={removeLearnLang}
             setUiLanguage={setUiLanguage}
             setDefaultMode={setDefaultMode}
             setTheme={setTheme}

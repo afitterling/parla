@@ -51,11 +51,35 @@ export function rememberPair(
   return [{ input, goal, usedAt: now }, ...rest].slice(0, MAX_RECENT_PAIRS);
 }
 
+// Every language the learner has content in: both sides of the recently-used
+// pairs (newest first), then the languages of saved words/phrases — the latter
+// also covers content from builds that predate `recentPairs`. Used to surface
+// "your" languages at the top of the input-language picker.
+export function contentLanguages(
+  pairs: LanguagePair[],
+  ...itemLists: { lang: string }[][]
+): string[] {
+  const out: string[] = [];
+  const add = (code: string) => {
+    if (code && !out.includes(code)) out.push(code);
+  };
+  for (const p of pairs) {
+    add(p.input);
+    add(p.goal);
+  }
+  for (const list of itemLists) for (const item of list) add(item.lang);
+  return out;
+}
+
 export type Settings = {
   anthropicKey: string;
   openaiKey: string;
   inputLanguage: string; // what the learner speaks (Whisper transcription)
   goalLanguage: string; // the language being learned (Parla speaks/teaches)
+  // Every goal language the learner works on. Grows automatically with whatever
+  // is used and can be extended in Settings. Not consumed by the dialog yet —
+  // groundwork for the Coach knowing which languages the learner cares about.
+  learnLanguages: string[];
   isPro: boolean; // Parla Pro — removes the free-tier rate limit
   uiLanguage: string; // app UI language: a UiLang code or 'auto' (device locale)
   defaultMode: 'free' | 'ask'; // which dialog mode starts active: 'free'=Interpreter, 'ask'=Coach
@@ -235,9 +259,16 @@ export function recentTags(items: { tags: string[]; createdAt: number }[]): stri
   return out;
 }
 
+// Add a goal language to the learn set (dedup, order preserved).
+export function addLearnLanguage(list: string[], code: string): string[] {
+  return list.includes(code) ? list : [...list, code];
+}
+
 export async function loadSettings(): Promise<Settings> {
   const raw = await readRaw(SETTINGS_FILE);
   const stored: Partial<Settings> & { language?: string } = raw ? safeParse(raw) : {};
+  // migrate the old single `language` field → goal language
+  const goalLanguage = stored.goalLanguage || stored.language || 'zh';
   return {
     // Keys are injected from .env.dev (EXPO_PUBLIC_*) at build time and are the
     // source of truth now (no Settings UI to set them). Only fall back to a
@@ -245,8 +276,13 @@ export async function loadSettings(): Promise<Settings> {
     anthropicKey: !isPlaceholder(envAnthropic) ? envAnthropic : stored.anthropicKey || '',
     openaiKey: !isPlaceholder(envOpenai) ? envOpenai : stored.openaiKey || '',
     inputLanguage: stored.inputLanguage || 'de',
-    // migrate the old single `language` field → goal language
-    goalLanguage: stored.goalLanguage || stored.language || 'zh',
+    goalLanguage,
+    learnLanguages: Array.isArray(stored.learnLanguages)
+      ? addLearnLanguage(
+          stored.learnLanguages.filter((c): c is string => typeof c === 'string' && !!c),
+          goalLanguage
+        )
+      : [goalLanguage],
     isPro: stored.isPro ?? false,
     uiLanguage: stored.uiLanguage || 'auto',
     defaultMode: stored.defaultMode === 'ask' ? 'ask' : 'free',

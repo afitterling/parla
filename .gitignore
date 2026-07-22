@@ -38,6 +38,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# SST local state
+.sst/
+
 # generated native folders
 /ios
 /android

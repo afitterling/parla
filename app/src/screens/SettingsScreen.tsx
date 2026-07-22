@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -24,6 +25,8 @@ type Props = {
   settings: Settings;
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
+  onAddLearnLanguage: (code: string) => void;
+  onRemoveLearnLanguage: (code: string) => void;
   setUiLanguage: (code: string) => void;
   setDefaultMode: (mode: 'free' | 'ask') => void;
   setTheme: (mode: 'light' | 'dark' | 'system') => void;
@@ -36,6 +39,8 @@ export function SettingsScreen({
   settings,
   onChangeInputLanguage,
   onChangeGoalLanguage,
+  onAddLearnLanguage,
+  onRemoveLearnLanguage,
   setUiLanguage,
   setDefaultMode,
   setTheme,
@@ -46,7 +51,8 @@ export function SettingsScreen({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const t = useT();
-  const [picker, setPicker] = useState<'input' | 'goal' | null>(null);
+  const [picker, setPicker] = useState<'input' | 'learn' | null>(null);
+  const [uiLangOpen, setUiLangOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // App / build info — baked in from app.json at build time (see scripts/setVersion.sh).
@@ -75,43 +81,15 @@ export function SettingsScreen({
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.sectionLabel}>{t('settings.appLanguage').toUpperCase()}</Text>
-        <View style={styles.langGrid}>
-          <Pressable
-            style={[styles.langTile, settings.uiLanguage === 'auto' && styles.langTileActive]}
-            onPress={() => setUiLanguage('auto')}
-          >
-            <Ionicons
-              name="globe-outline"
-              size={22}
-              color={settings.uiLanguage === 'auto' ? theme.colors.accent : theme.colors.textMuted}
-            />
-            <Text
-              style={[
-                styles.langName,
-                settings.uiLanguage === 'auto' && styles.langNameActive,
-              ]}
-            >
-              {t('settings.auto')}
-            </Text>
-          </Pressable>
-          {UI_LANGS.map((l) => {
-            const isActive = l.code === settings.uiLanguage;
-            return (
-              <Pressable
-                key={l.code}
-                style={[styles.langTile, isActive && styles.langTileActive]}
-                onPress={() => setUiLanguage(l.code)}
-              >
-                <Ionicons
-                  name="language-outline"
-                  size={22}
-                  color={isActive ? theme.colors.accent : theme.colors.textMuted}
-                />
-                <Text style={[styles.langName, isActive && styles.langNameActive]}>{l.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Pressable style={styles.selector} onPress={() => setUiLangOpen(true)}>
+          <Ionicons name="language-outline" size={20} color={theme.colors.accent} />
+          <Text style={styles.selectorValue}>
+            {settings.uiLanguage === 'auto'
+              ? t('settings.auto')
+              : UI_LANGS.find((l) => l.code === settings.uiLanguage)?.label ?? settings.uiLanguage}
+          </Text>
+          <Ionicons name="chevron-down" size={18} color={theme.colors.textFaint} />
+        </Pressable>
 
         <Text style={styles.sectionLabel}>{t('settings.startMode').toUpperCase()}</Text>
         <View style={styles.modeGrid}>
@@ -169,12 +147,39 @@ export function SettingsScreen({
           <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
         </Pressable>
 
+        {/* Multiple goal languages, saved in settings (what consumes the set
+            beyond the dialog is still open — Coach groundwork). One chip per
+            language: tap = make it the active goal, ✕ = remove, + = add. */}
         <Text style={styles.sectionLabel}>{t('settings.iLearnGoal')}</Text>
-        <Pressable style={styles.selector} onPress={() => setPicker('goal')}>
-          <Ionicons name="school-outline" size={20} color={theme.colors.accent} />
-          <Text style={styles.selectorValue}>{findLanguage(settings.goalLanguage).nativeName}</Text>
-          <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
-        </Pressable>
+        <View style={styles.learnRow}>
+          {settings.learnLanguages.map((code) => {
+            const l = findLanguage(code);
+            const active = code === settings.goalLanguage;
+            return (
+              <Pressable
+                key={code}
+                style={[styles.learnChip, active && styles.learnChipActive]}
+                onPress={() => onChangeGoalLanguage(code)}
+              >
+                <Text style={styles.learnChipFlag}>{l.flag}</Text>
+                <Text style={[styles.learnChipText, active && styles.learnChipTextActive]}>
+                  {l.nativeName}
+                </Text>
+                {/* The active goal cannot be removed — switch to another first. */}
+                {!active && (
+                  <Pressable onPress={() => onRemoveLearnLanguage(code)} hitSlop={8}>
+                    <Ionicons name="close" size={13} color={theme.colors.textFaint} />
+                  </Pressable>
+                )}
+              </Pressable>
+            );
+          })}
+          <Pressable style={styles.learnAddChip} onPress={() => setPicker('learn')}>
+            <Ionicons name="add" size={15} color={theme.colors.accent} />
+            <Text style={styles.learnAddText}>{t('settings.addLanguage')}</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.hint}>{t('settings.learnLanguagesHint')}</Text>
 
         <Text style={styles.sectionLabel}>{t('settings.parlaPro')}</Text>
         <View style={styles.card}>
@@ -221,13 +226,47 @@ export function SettingsScreen({
 
       <LanguagePicker
         visible={picker !== null}
-        title={picker === 'input' ? t('settings.iSpeakInput') : t('settings.iLearnGoal')}
+        title={picker === 'input' ? t('settings.iSpeakInput') : t('settings.addLanguage')}
         selectedCode={picker === 'input' ? settings.inputLanguage : settings.goalLanguage}
         onSelect={(code) =>
-          picker === 'input' ? onChangeInputLanguage(code) : onChangeGoalLanguage(code)
+          picker === 'input' ? onChangeInputLanguage(code) : onAddLearnLanguage(code)
         }
         onClose={() => setPicker(null)}
       />
+
+      {/* App-language dropdown: Automatic + the translated UI languages. */}
+      <Modal
+        visible={uiLangOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setUiLangOpen(false)}
+      >
+        <Pressable style={styles.dropBackdrop} onPress={() => setUiLangOpen(false)}>
+          <Pressable style={styles.dropSheet} onPress={() => {}}>
+            {[{ code: 'auto', label: t('settings.auto') }, ...UI_LANGS].map((l) => {
+              const active = l.code === settings.uiLanguage;
+              return (
+                <Pressable
+                  key={l.code}
+                  style={[styles.dropRow, active && styles.dropRowActive]}
+                  onPress={() => {
+                    setUiLangOpen(false);
+                    setUiLanguage(l.code);
+                  }}
+                >
+                  <Ionicons
+                    name={l.code === 'auto' ? 'globe-outline' : 'language-outline'}
+                    size={17}
+                    color={active ? theme.colors.accent : theme.colors.textMuted}
+                  />
+                  <Text style={[styles.dropText, active && styles.dropTextActive]}>{l.label}</Text>
+                  {active && <Ionicons name="checkmark" size={16} color={theme.colors.accent} />}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -245,6 +284,58 @@ function makeStyles(theme: Theme) {
     marginBottom: 10,
   },
   langGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  learnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  learnChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  learnChipActive: { borderColor: theme.colors.accent, backgroundColor: theme.colors.accentDim },
+  learnChipFlag: { fontSize: 14 },
+  learnChipText: { color: theme.colors.text, fontSize: 13, fontWeight: '600' },
+  learnChipTextActive: { color: theme.colors.accent },
+  learnAddChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colors.accent,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  learnAddText: { color: theme.colors.accent, fontSize: 13, fontWeight: '700' },
+  dropBackdrop: {
+    flex: 1,
+    backgroundColor: '#00000066',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  dropSheet: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    padding: 8,
+  },
+  dropRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  dropRowActive: { backgroundColor: theme.colors.accentDim },
+  dropText: { color: theme.colors.text, fontSize: 15, fontWeight: '600', flex: 1 },
+  dropTextActive: { color: theme.colors.accent },
   modeGrid: { flexDirection: 'row', gap: 10 },
   modeTile: {
     flex: 1,
