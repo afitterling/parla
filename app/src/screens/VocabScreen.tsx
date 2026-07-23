@@ -17,7 +17,7 @@ import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
-import { generateVocabExample, transcribeAudio } from '../api';
+import { generateVocabExample, transcribeAudio, translateVocabTerm } from '../api';
 import { findLanguage, speechLocale, usesHanzi } from '../languages';
 import { useRecorder } from '../useRecorder';
 import { SwipeRow } from '../components/SwipeRow';
@@ -44,11 +44,17 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const t = useT();
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
+  // Reading of the term, prefilled when the term came from auto-translate; it is
+  // cleared when the term is edited by hand (the reading belongs to the term).
+  const [termPinyin, setTermPinyin] = useState('');
   const [adding, setAdding] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [mode, setMode] = useState<'list' | 'quiz'>('list');
   const recorder = useRecorder();
   const [transcribing, setTranscribing] = useState(false);
+  // Which of the two add-card fields the mic is currently recording for.
+  const [micTarget, setMicTarget] = useState<'term' | 'translation'>('term');
+  const [translating, setTranslating] = useState(false);
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
@@ -130,40 +136,96 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
     ]);
   }
 
-  // Speak the word instead of typing it: tap to record, tap again to stop and
-  // transcribe with Whisper in the goal language, then drop the text into the
-  // word field (still editable before saving).
-  async function onMicPress() {
+  // Speak instead of typing: tap to record, tap again to stop and transcribe
+  // with Whisper, then drop the text into the field (still editable before
+  // saving). Works for both fields — the term records in the goal language,
+  // the translation in the input language.
+  async function onMicPress(target: 'term' | 'translation') {
+    // A tap on the *other* mic while recording just stops the running one, so
+    // errors are attributed to the field the recording was started for.
+    const active = recorder.state === 'recording' ? micTarget : target;
+    const title = active === 'term' ? t('vocab.speakWord') : t('vocab.speakTranslation');
     if (recorder.state === 'recording') {
       try {
         setTranscribing(true);
         const uri = await recorder.stop();
         if (uri) {
-          const text = await transcribeAudio(uri, settings.openaiKey, goalLang);
+          const lang = micTarget === 'term' ? goalLang : inputLang;
+          const text = await transcribeAudio(uri, settings.openaiKey, lang);
           // Whisper punctuates like a sentence — strip that for a vocab entry.
           const cleaned = text.replace(/[。．.．!！?？,，、;；]+$/gu, '').trim();
-          if (cleaned) setTerm(cleaned);
-          else Alert.alert(t('vocab.speakWord'), t('dialog.errorNoSpeech'));
+          if (!cleaned) Alert.alert(title, t('dialog.errorNoSpeech'));
+          else if (micTarget === 'term') {
+            setTerm(cleaned);
+            setTermPinyin('');
+          } else setTranslation(cleaned);
         }
       } catch (e: any) {
-        Alert.alert(t('vocab.speakWord'), e?.message ?? String(e));
+        Alert.alert(title, e?.message ?? String(e));
       } finally {
         setTranscribing(false);
       }
     } else {
       try {
+        setMicTarget(target);
         await recorder.start();
       } catch (e: any) {
-        Alert.alert(t('vocab.speakWord'), e?.message ?? t('dialog.errorRecording'));
+        Alert.alert(title, e?.message ?? t('dialog.errorRecording'));
       }
+    }
+  }
+
+  // Fill the empty half of the pair from the filled one. Direction is inferred:
+  // only the term → translate into the input language; only the translation →
+  // translate into the goal language (incl. the reading, so the word is saved
+  // complete). The button is only enabled when exactly one side is filled.
+  async function onTranslatePress() {
+    if (translating) return;
+    const haveTerm = !!term.trim();
+    const haveTranslation = !!translation.trim();
+    if (haveTerm === haveTranslation) return;
+    setTranslating(true);
+    try {
+      if (haveTerm) {
+        const res = await translateVocabTerm(
+          settings.openaiKey,
+          term.trim(),
+          goalLang,
+          inputLang,
+          false
+        );
+        setTranslation(res.text);
+      } else {
+        const res = await translateVocabTerm(
+          settings.openaiKey,
+          translation.trim(),
+          inputLang,
+          goalLang,
+          wantPinyin
+        );
+        setTerm(res.text);
+        setTermPinyin(res.reading ?? '');
+      }
+    } catch (e: any) {
+      Alert.alert(t('vocab.translate'), e?.message ?? String(e));
+    } finally {
+      setTranslating(false);
     }
   }
 
   function submit() {
     if (!term.trim()) return;
-    onAdd([{ term: term.trim(), translation: translation.trim(), lang: settings.goalLanguage }]);
+    onAdd([
+      {
+        term: term.trim(),
+        translation: translation.trim(),
+        pinyin: termPinyin.trim() || undefined,
+        lang: settings.goalLanguage,
+      },
+    ]);
     setTerm('');
     setTranslation('');
+    setTermPinyin('');
     setAdding(false);
   }
 
@@ -285,38 +347,59 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
               })}
               placeholderTextColor={theme.colors.textFaint}
               value={term}
-              onChangeText={setTerm}
+              onChangeText={(v) => {
+                setTerm(v);
+                // Hand-editing the term invalidates a reading that came from
+                // auto-translate.
+                setTermPinyin('');
+              }}
               autoFocus
             />
+            <MicButton
+              recording={recorder.state === 'recording' && micTarget === 'term'}
+              busy={transcribing && micTarget === 'term'}
+              onPress={() => onMicPress('term')}
+              label={t('vocab.speakWord')}
+            />
+          </View>
+          {!!termPinyin && <Text style={styles.addPinyin}>{termPinyin}</Text>}
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, styles.inputFlex]}
+              placeholder={t('vocab.translationPlaceholder', {
+                lang: findLanguage(settings.inputLanguage).nativeName,
+              })}
+              placeholderTextColor={theme.colors.textFaint}
+              value={translation}
+              onChangeText={setTranslation}
+              onSubmitEditing={submit}
+              returnKeyType="done"
+            />
+            <MicButton
+              recording={recorder.state === 'recording' && micTarget === 'translation'}
+              busy={transcribing && micTarget === 'translation'}
+              onPress={() => onMicPress('translation')}
+              label={t('vocab.speakTranslation')}
+            />
+          </View>
+          {/* Enabled only when exactly one side is filled — it fills the other. */}
+          {!!term.trim() !== !!translation.trim() && (
             <Pressable
-              style={[styles.micBtn, recorder.state === 'recording' && styles.micBtnActive]}
-              onPress={onMicPress}
-              disabled={transcribing}
-              hitSlop={8}
-              accessibilityLabel={t('vocab.speakWord')}
+              style={styles.translateBtn}
+              onPress={onTranslatePress}
+              disabled={translating}
+              accessibilityLabel={t('vocab.translate')}
             >
-              {transcribing ? (
+              {translating ? (
                 <ActivityIndicator size="small" color={theme.colors.accent} />
               ) : (
-                <Ionicons
-                  name={recorder.state === 'recording' ? 'stop' : 'mic-outline'}
-                  size={18}
-                  color={recorder.state === 'recording' ? '#fff' : theme.colors.accent}
-                />
+                <>
+                  <Ionicons name="sparkles-outline" size={16} color={theme.colors.accent} />
+                  <Text style={styles.translateBtnText}>{t('vocab.translate')}</Text>
+                </>
               )}
             </Pressable>
-          </View>
-          <TextInput
-            style={styles.input}
-            placeholder={t('vocab.translationPlaceholder', {
-              lang: findLanguage(settings.inputLanguage).nativeName,
-            })}
-            placeholderTextColor={theme.colors.textFaint}
-            value={translation}
-            onChangeText={setTranslation}
-            onSubmitEditing={submit}
-            returnKeyType="done"
-          />
+          )}
           <Pressable style={styles.saveBtn} onPress={submit}>
             <Text style={styles.saveBtnText}>{t('common.save')}</Text>
           </Pressable>
@@ -371,6 +454,42 @@ function Seg({
     <Pressable style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress}>
       <Ionicons name={icon} size={15} color={active ? '#fff' : theme.colors.textMuted} />
       <Text style={[styles.segText, active && styles.segTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+// Round mic button used by both add-card fields: idle → mic, recording → stop,
+// transcribing → spinner.
+function MicButton({
+  recording,
+  busy,
+  onPress,
+  label,
+}: {
+  recording: boolean;
+  busy: boolean;
+  onPress: () => void;
+  label: string;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  return (
+    <Pressable
+      style={[styles.micBtn, recording && styles.micBtnActive]}
+      onPress={onPress}
+      disabled={busy}
+      hitSlop={8}
+      accessibilityLabel={label}
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={theme.colors.accent} />
+      ) : (
+        <Ionicons
+          name={recording ? 'stop' : 'mic-outline'}
+          size={18}
+          color={recording ? '#fff' : theme.colors.accent}
+        />
+      )}
     </Pressable>
   );
 }
@@ -603,6 +722,19 @@ function makeStyles(theme: Theme) {
     backgroundColor: theme.colors.accentDim,
   },
   micBtnActive: { backgroundColor: theme.colors.danger },
+  // Reading of an auto-translated term, previewed before saving.
+  addPinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: -4, paddingLeft: 4 },
+  translateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+    paddingVertical: 11,
+  },
+  translateBtnText: { color: theme.colors.accent, fontWeight: '700', fontSize: 14 },
   saveBtn: {
     backgroundColor: theme.colors.accent2,
     borderRadius: theme.radius.sm,

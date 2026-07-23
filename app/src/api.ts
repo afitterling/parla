@@ -422,6 +422,77 @@ Regeln:
   return pinyin;
 }
 
+// ── Translate a single vocab term ────────────────────────────────────────────
+// The add card lets the learner enter only ONE side of the pair (either the
+// goal-language word or its translation); this fills in the other side. When
+// the target is the goal language and it uses a reading aid, the reading is
+// returned too, so the word is saved complete without a second call.
+export async function translateVocabTerm(
+  openaiKey: string,
+  text: string,
+  from: Language,
+  to: Language,
+  wantReading: boolean,
+  signal?: AbortSignal
+): Promise<{ text: string; reading?: string }> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const readingField = wantReading
+    ? `\n  "reading": "<lateinische Umschrift/Transliteration der Übersetzung>",`
+    : '';
+  const readingRule = wantReading
+    ? `\n- "reading": IMMER die lateinische Umschrift der Übersetzung im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du bist ein Wörterbuch von ${from.label} (${from.nativeName}) nach ${to.label} (${to.nativeName}). Übersetze das gegebene Wort bzw. die kurze Wendung.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${readingField}
+  "translation": "<die gebräuchlichste Übersetzung auf ${to.nativeName}>"
+}
+
+Regeln:
+- Gib die EINE gebräuchlichste Übersetzung, keine Alternativen, keine Erklärung.
+- Nur das Wort/die Wendung selbst — kein ganzer Satz, keine Satzzeichen.${readingRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    to.promptHint ? `\n- ${to.promptHint}` : ''
+  }`;
+
+  const { signal: s, done } = linkSignals(signal, 30000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: 200,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: text },
+        ],
+      }),
+      signal: s,
+    });
+  } finally {
+    done();
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const translation = typeof json?.translation === 'string' ? json.translation.trim() : '';
+  if (!translation) throw new Error('Keine Übersetzung erhalten — bitte nochmal versuchen.');
+  return {
+    text: translation,
+    reading:
+      wantReading && typeof json?.reading === 'string' && json.reading.trim()
+        ? String(json.reading).trim()
+        : undefined,
+  };
+}
+
 // ── Break a sentence into its individual words/terms ─────────────────────────
 // The dialogue offers a "word for word" action on a translated sentence: it
 // segments the goal-language sentence into its meaningful words/expressions so
