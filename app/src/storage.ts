@@ -85,6 +85,10 @@ export type Settings = {
   defaultMode: 'free' | 'ask'; // which dialog mode starts active: 'free'=Interpreter, 'ask'=Coach
   theme: 'light' | 'dark' | 'system'; // color theme; 'system' follows the OS
   recentPairs: LanguagePair[]; // language pairs content was saved into, newest first
+  // Emergency mode: shows a red button in the header that opens the emergency
+  // screen (local-language phrases + location + two-way interpreter). Off by
+  // default — it's opt-in via Settings.
+  emergencyEnabled: boolean;
 };
 
 // ── Storage backing ───────────────────────────────────────────────────────────
@@ -288,6 +292,7 @@ export async function loadSettings(): Promise<Settings> {
     defaultMode: stored.defaultMode === 'ask' ? 'ask' : 'free',
     theme: stored.theme === 'light' || stored.theme === 'dark' ? stored.theme : 'system',
     recentPairs: sanitizePairs(stored.recentPairs),
+    emergencyEnabled: stored.emergencyEnabled === true,
   };
 }
 

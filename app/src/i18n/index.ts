@@ -208,6 +208,29 @@ const de: Record<string, string> = {
   'tagModal.removeTitle': 'Tag entfernen?',
   'tagModal.removeMsg': '„{tag}" von dieser Phrase entfernen?',
   'tagModal.remove': 'Entfernen',
+  // emergency mode
+  'emergency.title': 'Notfall',
+  'emergency.settingsLabel': 'Notfall-Knopf anzeigen',
+  'emergency.settingsHint':
+    'Zeigt oben einen roten Notfall-Knopf: wichtige Sätze in der Landessprache, dein Standort und ein Zwei-Wege-Dolmetscher.',
+  'emergency.phrases': 'Wichtige Sätze',
+  'emergency.interpreterHint':
+    'Mikro tippen, sprechen, Stopp tippen — die Übersetzung wird angezeigt und vorgelesen. Dann ist die andere Person dran.',
+  'emergency.translating': 'Übersetze …',
+  'emergency.nothingHeard': 'Nichts verstanden — bitte nochmal sprechen.',
+  'emergency.locating': 'Standort wird ermittelt …',
+  'emergency.locationDenied': 'Standort-Zugriff verweigert — in den iOS-Einstellungen erlauben.',
+  'emergency.locationFailed': 'Standort konnte nicht ermittelt werden.',
+  'emergency.fallbackEn': 'Für diese Sprache liegen die Sätze auf Englisch vor.',
+  'emergency.p.help': 'Hilfe!',
+  'emergency.p.ambulance': 'Bitte rufen Sie einen Krankenwagen!',
+  'emergency.p.police': 'Bitte rufen Sie die Polizei!',
+  'emergency.p.doctor': 'Ich brauche einen Arzt.',
+  'emergency.p.injured': 'Ich bin verletzt.',
+  'emergency.p.emergency': 'Das ist ein Notfall.',
+  'emergency.p.hospital': 'Wo ist das nächste Krankenhaus?',
+  'emergency.p.understand': 'Ich verstehe nicht.',
+  'emergency.p.lost': 'Ich habe mich verlaufen.',
 };
 
 const en: Record<string, string> = {
@@ -390,6 +413,29 @@ const en: Record<string, string> = {
   'tagModal.removeTitle': 'Remove tag?',
   'tagModal.removeMsg': 'Remove „{tag}" from this phrase?',
   'tagModal.remove': 'Remove',
+  // emergency mode
+  'emergency.title': 'Emergency',
+  'emergency.settingsLabel': 'Show emergency button',
+  'emergency.settingsHint':
+    'Shows a red emergency button at the top: key phrases in the local language, your location, and a two-way interpreter.',
+  'emergency.phrases': 'Key phrases',
+  'emergency.interpreterHint':
+    'Tap a mic, speak, tap stop — the translation is shown and read aloud. Then the other person takes a turn.',
+  'emergency.translating': 'Translating …',
+  'emergency.nothingHeard': 'Nothing understood — please speak again.',
+  'emergency.locating': 'Getting location …',
+  'emergency.locationDenied': 'Location access denied — allow it in iOS Settings.',
+  'emergency.locationFailed': 'Could not get your location.',
+  'emergency.fallbackEn': 'Phrases for this language are shown in English.',
+  'emergency.p.help': 'Help!',
+  'emergency.p.ambulance': 'Please call an ambulance!',
+  'emergency.p.police': 'Please call the police!',
+  'emergency.p.doctor': 'I need a doctor.',
+  'emergency.p.injured': 'I am injured.',
+  'emergency.p.emergency': 'This is an emergency.',
+  'emergency.p.hospital': 'Where is the nearest hospital?',
+  'emergency.p.understand': 'I don’t understand.',
+  'emergency.p.lost': 'I am lost.',
 };
 
 const zh: Record<string, string> = {
@@ -565,6 +611,27 @@ const zh: Record<string, string> = {
   'tagModal.title': '标签',
   'tagModal.newTag': '新标签',
   'tagModal.close': '完成',
+  // emergency mode
+  'emergency.title': '紧急情况',
+  'emergency.settingsLabel': '显示紧急按钮',
+  'emergency.settingsHint': '在顶部显示红色紧急按钮：当地语言的关键句子、你的位置，以及双向翻译。',
+  'emergency.phrases': '关键句子',
+  'emergency.interpreterHint': '点麦克风说话，点停止 — 显示并朗读翻译。然后轮到对方。',
+  'emergency.translating': '翻译中 …',
+  'emergency.nothingHeard': '没有听清 — 请再说一次。',
+  'emergency.locating': '正在获取位置 …',
+  'emergency.locationDenied': '位置权限被拒绝 — 请在 iOS 设置中允许。',
+  'emergency.locationFailed': '无法获取位置。',
+  'emergency.fallbackEn': '该语言的句子以英语显示。',
+  'emergency.p.help': '救命！',
+  'emergency.p.ambulance': '请叫救护车！',
+  'emergency.p.police': '请报警！',
+  'emergency.p.doctor': '我需要医生。',
+  'emergency.p.injured': '我受伤了。',
+  'emergency.p.emergency': '这是紧急情况。',
+  'emergency.p.hospital': '最近的医院在哪里？',
+  'emergency.p.understand': '我听不懂。',
+  'emergency.p.lost': '我迷路了。',
 };
 
 const zhTW: Record<string, string> = {
@@ -740,6 +807,27 @@ const zhTW: Record<string, string> = {
   'tagModal.title': '標籤',
   'tagModal.newTag': '新標籤',
   'tagModal.close': '完成',
+  // emergency mode
+  'emergency.title': '緊急情況',
+  'emergency.settingsLabel': '顯示緊急按鈕',
+  'emergency.settingsHint': '在頂部顯示紅色緊急按鈕：當地語言的關鍵句子、你的位置，以及雙向翻譯。',
+  'emergency.phrases': '關鍵句子',
+  'emergency.interpreterHint': '點麥克風說話，點停止 — 顯示並朗讀翻譯。然後輪到對方。',
+  'emergency.translating': '翻譯中 …',
+  'emergency.nothingHeard': '沒有聽清 — 請再說一次。',
+  'emergency.locating': '正在取得位置 …',
+  'emergency.locationDenied': '位置權限被拒絕 — 請在 iOS 設定中允許。',
+  'emergency.locationFailed': '無法取得位置。',
+  'emergency.fallbackEn': '該語言的句子以英語顯示。',
+  'emergency.p.help': '救命！',
+  'emergency.p.ambulance': '請叫救護車！',
+  'emergency.p.police': '請報警！',
+  'emergency.p.doctor': '我需要醫生。',
+  'emergency.p.injured': '我受傷了。',
+  'emergency.p.emergency': '這是緊急情況。',
+  'emergency.p.hospital': '最近的醫院在哪裡？',
+  'emergency.p.understand': '我聽不懂。',
+  'emergency.p.lost': '我迷路了。',
 };
 
 const id: Record<string, string> = {
@@ -918,6 +1006,29 @@ const id: Record<string, string> = {
   'tagModal.title': 'Tag',
   'tagModal.newTag': 'Tag baru',
   'tagModal.close': 'Selesai',
+  // emergency mode
+  'emergency.title': 'Darurat',
+  'emergency.settingsLabel': 'Tampilkan tombol darurat',
+  'emergency.settingsHint':
+    'Menampilkan tombol darurat merah di atas: kalimat penting dalam bahasa setempat, lokasimu, dan penerjemah dua arah.',
+  'emergency.phrases': 'Kalimat penting',
+  'emergency.interpreterHint':
+    'Ketuk mikrofon, bicara, ketuk berhenti — terjemahan ditampilkan dan dibacakan. Lalu giliran orang lain.',
+  'emergency.translating': 'Menerjemahkan …',
+  'emergency.nothingHeard': 'Tidak terdengar — silakan bicara lagi.',
+  'emergency.locating': 'Mencari lokasi …',
+  'emergency.locationDenied': 'Akses lokasi ditolak — izinkan di Pengaturan iOS.',
+  'emergency.locationFailed': 'Lokasi tidak dapat ditemukan.',
+  'emergency.fallbackEn': 'Kalimat untuk bahasa ini ditampilkan dalam bahasa Inggris.',
+  'emergency.p.help': 'Tolong!',
+  'emergency.p.ambulance': 'Tolong panggil ambulans!',
+  'emergency.p.police': 'Tolong panggil polisi!',
+  'emergency.p.doctor': 'Saya butuh dokter.',
+  'emergency.p.injured': 'Saya terluka.',
+  'emergency.p.emergency': 'Ini keadaan darurat.',
+  'emergency.p.hospital': 'Di mana rumah sakit terdekat?',
+  'emergency.p.understand': 'Saya tidak mengerti.',
+  'emergency.p.lost': 'Saya tersesat.',
 };
 
 const ms: Record<string, string> = {
@@ -1096,6 +1207,29 @@ const ms: Record<string, string> = {
   'tagModal.title': 'Tag',
   'tagModal.newTag': 'Tag baharu',
   'tagModal.close': 'Selesai',
+  // emergency mode
+  'emergency.title': 'Kecemasan',
+  'emergency.settingsLabel': 'Tunjukkan butang kecemasan',
+  'emergency.settingsHint':
+    'Menunjukkan butang kecemasan merah di atas: ayat penting dalam bahasa tempatan, lokasi anda, dan jurubahasa dua hala.',
+  'emergency.phrases': 'Ayat penting',
+  'emergency.interpreterHint':
+    'Ketik mikrofon, bercakap, ketik berhenti — terjemahan dipaparkan dan dibacakan. Kemudian giliran orang lain.',
+  'emergency.translating': 'Menterjemah …',
+  'emergency.nothingHeard': 'Tidak didengar — sila bercakap sekali lagi.',
+  'emergency.locating': 'Mendapatkan lokasi …',
+  'emergency.locationDenied': 'Akses lokasi ditolak — benarkan dalam Tetapan iOS.',
+  'emergency.locationFailed': 'Lokasi tidak dapat ditentukan.',
+  'emergency.fallbackEn': 'Ayat untuk bahasa ini dipaparkan dalam bahasa Inggeris.',
+  'emergency.p.help': 'Tolong!',
+  'emergency.p.ambulance': 'Tolong panggil ambulans!',
+  'emergency.p.police': 'Tolong panggil polis!',
+  'emergency.p.doctor': 'Saya perlukan doktor.',
+  'emergency.p.injured': 'Saya cedera.',
+  'emergency.p.emergency': 'Ini kecemasan.',
+  'emergency.p.hospital': 'Di mana hospital terdekat?',
+  'emergency.p.understand': 'Saya tidak faham.',
+  'emergency.p.lost': 'Saya sesat.',
 };
 
 // Arabic. Text renders right-to-left on its own; the app layout stays LTR for
@@ -1277,6 +1411,29 @@ const ar: Record<string, string> = {
   'tagModal.removeTitle': 'إزالة الوسم؟',
   'tagModal.removeMsg': 'إزالة «{tag}» من هذه العبارة؟',
   'tagModal.remove': 'إزالة',
+  // emergency mode
+  'emergency.title': 'الطوارئ',
+  'emergency.settingsLabel': 'إظهار زر الطوارئ',
+  'emergency.settingsHint':
+    'يعرض زر طوارئ أحمر في الأعلى: عبارات مهمة باللغة المحلية، وموقعك، ومترجمًا فوريًا باتجاهين.',
+  'emergency.phrases': 'عبارات مهمة',
+  'emergency.interpreterHint':
+    'اضغط الميكروفون وتحدّث ثم اضغط إيقاف — تُعرض الترجمة وتُقرأ بصوت عالٍ. ثم يأتي دور الشخص الآخر.',
+  'emergency.translating': 'جارٍ الترجمة …',
+  'emergency.nothingHeard': 'لم يُسمع شيء — تحدّث مرة أخرى من فضلك.',
+  'emergency.locating': 'جارٍ تحديد الموقع …',
+  'emergency.locationDenied': 'تم رفض الوصول إلى الموقع — اسمح به في إعدادات iOS.',
+  'emergency.locationFailed': 'تعذّر تحديد الموقع.',
+  'emergency.fallbackEn': 'تُعرض عبارات هذه اللغة بالإنجليزية.',
+  'emergency.p.help': 'النجدة!',
+  'emergency.p.ambulance': 'من فضلك اتصل بالإسعاف!',
+  'emergency.p.police': 'من فضلك اتصل بالشرطة!',
+  'emergency.p.doctor': 'أحتاج إلى طبيب.',
+  'emergency.p.injured': 'أنا مصاب.',
+  'emergency.p.emergency': 'هذه حالة طارئة.',
+  'emergency.p.hospital': 'أين أقرب مستشفى؟',
+  'emergency.p.understand': 'لا أفهم.',
+  'emergency.p.lost': 'لقد ضللت الطريق.',
 };
 
 const T: Record<UiLang, Record<string, string>> = {

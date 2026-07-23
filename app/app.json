@@ -11,6 +11,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren.",
+        "NSLocationWhenInUseUsageDescription": "Parla zeigt im Notfall deinen Standort an, damit du ihn Helfern zeigen kannst.",
         "NSUbiquitousContainers": {
           "iCloud.com.afitterling.sprachapp": {
             "NSUbiquitousContainerIsDocumentScopePublic": true,
@@ -58,7 +59,13 @@
         }
       ],
       "expo-localization",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Parla zeigt im Notfall deinen Standort an, damit du ihn Helfern zeigen kannst."
+        }
+      ]
     ],
     "extra": {
       "eas": {

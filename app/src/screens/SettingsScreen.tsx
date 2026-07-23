@@ -31,6 +31,7 @@ type Props = {
   setDefaultMode: (mode: 'free' | 'ask') => void;
   setTheme: (mode: 'light' | 'dark' | 'system') => void;
   setPro: (value: boolean) => void;
+  setEmergencyEnabled: (value: boolean) => void;
   purchasePro: () => void;
   restorePurchases: () => void;
 };
@@ -45,6 +46,7 @@ export function SettingsScreen({
   setDefaultMode,
   setTheme,
   setPro,
+  setEmergencyEnabled,
   purchasePro,
   restorePurchases,
 }: Props) {
@@ -180,6 +182,22 @@ export function SettingsScreen({
           </Pressable>
         </View>
         <Text style={styles.hint}>{t('settings.learnLanguagesHint')}</Text>
+
+        {/* Emergency mode — off by default; the red header button only shows
+            when this is on. */}
+        <Text style={styles.sectionLabel}>{t('emergency.title').toUpperCase()}</Text>
+        <View style={styles.card}>
+          <View style={[styles.switchRow, { marginTop: 0 }]}>
+            <Text style={styles.switchLabel}>{t('emergency.settingsLabel')}</Text>
+            <Switch
+              value={settings.emergencyEnabled}
+              onValueChange={setEmergencyEnabled}
+              trackColor={{ false: theme.colors.cardBorder, true: theme.colors.danger }}
+              thumbColor="#fff"
+            />
+          </View>
+          <Text style={[styles.hint, { marginTop: 0 }]}>{t('emergency.settingsHint')}</Text>
+        </View>
 
         <Text style={styles.sectionLabel}>{t('settings.parlaPro')}</Text>
         <View style={styles.card}>

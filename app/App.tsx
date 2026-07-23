@@ -30,6 +30,7 @@ import {
   VocabItem,
 } from './src/storage';
 import { DialogScreen } from './src/screens/DialogScreen';
+import { EmergencyScreen } from './src/screens/EmergencyScreen';
 import { VocabScreen } from './src/screens/VocabScreen';
 import { PhraseScreen } from './src/screens/PhraseScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -53,6 +54,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [vocab, setVocab] = useState<VocabItem[]>([]);
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const scheme = useColorScheme();
 
   // The app itself stays portrait; only the full-screen word card unlocks
@@ -168,6 +170,11 @@ export default function App() {
   function setTheme(mode: 'light' | 'dark' | 'system') {
     if (!settings) return;
     handleSaveSettings({ ...settings, theme: mode });
+  }
+
+  function setEmergencyEnabled(value: boolean) {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, emergencyEnabled: value });
   }
 
   function purchasePro() {
@@ -300,6 +307,17 @@ export default function App() {
           </Text>
           <Text style={styles.tagline}>{t('app.tagline').toUpperCase()}</Text>
         </View>
+        {/* Emergency mode (opt-in via Settings): red button on every tab,
+            opens local-language phrases + location + two-way interpreter. */}
+        {settings.emergencyEnabled && (
+          <Pressable
+            style={styles.emergencyBtn}
+            hitSlop={6}
+            onPress={() => setEmergencyOpen(true)}
+          >
+            <Ionicons name="warning" size={22} color="#fff" />
+          </Pressable>
+        )}
         <PairMenu
           input={settings.inputLanguage}
           goal={settings.goalLanguage}
@@ -345,6 +363,7 @@ export default function App() {
         {tab === 'settings' && (
           <SettingsScreen
             settings={settings}
+            setEmergencyEnabled={setEmergencyEnabled}
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
             onAddLearnLanguage={addLearnLang}
@@ -358,6 +377,12 @@ export default function App() {
           />
         )}
       </View>
+
+      <EmergencyScreen
+        visible={emergencyOpen}
+        onClose={() => setEmergencyOpen(false)}
+        settings={settings}
+      />
 
       <View style={styles.tabBar}>
         {TABS.map((tb) => {
@@ -424,6 +449,14 @@ function makeStyles(theme: Theme) {
       borderColor: theme.colors.bg,
     },
     headerText: { flex: 1 },
+    emergencyBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 13,
+      backgroundColor: theme.colors.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     logo: { fontSize: 31, fontWeight: '900', color: theme.colors.text, letterSpacing: -0.5 },
     logoWord: { color: theme.colors.accent },
     tagline: {

@@ -44,6 +44,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Parla zeigt im Notfall deinen Standort an, damit du ihn Helfern zeigen kannst.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren.</string>
 	<key>NSUbiquitousContainers</key>

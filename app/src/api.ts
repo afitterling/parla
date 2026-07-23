@@ -493,6 +493,98 @@ Regeln:
   };
 }
 
+// ── Translate a spoken utterance (emergency interpreter) ─────────────────────
+// The emergency screen's two-way interpreter: whatever one side said (already
+// transcribed by Whisper) is translated to the other side's language, sentence
+// by sentence, with a Latin reading when the target script needs one. Faithful
+// and complete — no teaching, no simplification.
+export async function translateSpeech(
+  openaiKey: string,
+  text: string,
+  from: Language,
+  to: Language,
+  wantReading: boolean,
+  signal?: AbortSignal
+): Promise<{ text: string; reading?: string }> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const readingField = wantReading
+    ? `\n  "reading": "<lateinische Umschrift/Transliteration der Übersetzung>",`
+    : '';
+  const readingRule = wantReading
+    ? `\n- "reading": IMMER die lateinische Umschrift der Übersetzung im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du bist ein Dolmetscher in einer NOTFALLSITUATION. Übersetze die gesprochene Äußerung von ${from.label} (${from.nativeName}) nach ${to.label} (${to.nativeName}).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${readingField}
+  "translation": "<die vollständige Übersetzung auf ${to.nativeName}>"
+}
+
+Regeln:
+- Übersetze treu, vollständig und in einfacher, klarer Sprache — es geht um einen Notfall.
+- Kein Kommentar, keine Rückfrage, keine Auslassung.${readingRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    to.promptHint ? `\n- ${to.promptHint}` : ''
+  }`;
+
+  const body = JSON.stringify({
+    model: CHAT_MODEL,
+    max_tokens: 500,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: text },
+    ],
+  });
+
+  // Timeout + one retry, same as the dialogue — an emergency translation must
+  // not die on one flaky request.
+  let res: Response | null = null;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 45000);
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+        body,
+        signal: s,
+      });
+      done();
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
+    }
+  }
+  if (!res) {
+    throw new Error(
+      lastErr?.name === 'AbortError'
+        ? 'Zeitüberschreitung — Netzwerk langsam. Nochmal versuchen.'
+        : 'Netzwerkfehler — bitte nochmal versuchen.'
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const translation = typeof json?.translation === 'string' ? json.translation.trim() : '';
+  if (!translation) throw new Error('Keine Übersetzung erhalten — bitte nochmal versuchen.');
+  return {
+    text: translation,
+    reading:
+      wantReading && typeof json?.reading === 'string' && json.reading.trim()
+        ? String(json.reading).trim()
+        : undefined,
+  };
+}
+
 // ── Break a sentence into its individual words/terms ─────────────────────────
 // The dialogue offers a "word for word" action on a translated sentence: it
 // segments the goal-language sentence into its meaningful words/expressions so

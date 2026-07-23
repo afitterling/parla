@@ -43,6 +43,8 @@ PODS:
     - ExpoModulesCore
   - ExpoLocalization (56.0.6):
     - ExpoModulesCore
+  - ExpoLocation (56.0.21):
+    - ExpoModulesCore
   - ExpoLogBox (56.0.13):
     - React-Core
   - ExpoModulesCore (56.0.17):
@@ -1972,6 +1974,7 @@ DEPENDENCIES:
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
   - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
   - ExpoLocalization (from `../node_modules/expo-localization/ios`)
+  - ExpoLocation (from `../node_modules/expo-location/ios/ExpoLocation.podspec`)
   - "ExpoLogBox (from `../node_modules/expo/node_modules/@expo/log-box`)"
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
@@ -2079,6 +2082,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo/node_modules/expo-keep-awake/ios"
   ExpoLocalization:
     :path: "../node_modules/expo-localization/ios"
+  ExpoLocation:
+    :podspec: "../node_modules/expo-location/ios/ExpoLocation.podspec"
   ExpoLogBox:
     :path: "../node_modules/expo/node_modules/@expo/log-box"
   ExpoModulesCore:
@@ -2260,6 +2265,7 @@ SPEC CHECKSUMS:
   ExpoFont: 274487aa78f8c65d6551e2558eca3ec6ce3432ce
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
   ExpoLocalization: cf50efc436b2ec313510131c1ee0e778366d64b0
+  ExpoLocation: 5a75576d74fa6e491df56677369f99f3635dd3c5
   ExpoLogBox: 63977cf56b04547c713535d2d4e9bbf2f012e3c6
   ExpoModulesCore: 486dc1a2fdfc004b4be8eb3e9ad93782c43eb80a
   ExpoModulesJSI: abc606cf32f6eeb4e2ad44ec3fc4b24143abd8f6
