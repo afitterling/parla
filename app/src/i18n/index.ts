@@ -212,7 +212,8 @@ const de: Record<string, string> = {
   // emergency mode
   'emergency.title': 'Notfall',
   'emergency.shareLocation': 'Standort teilen',
-  'emergency.shareIntro': 'Mein aktueller Standort:',
+  'emergency.shareIntro': 'Dies ist ein Notruf. Mein aktueller Standort ist',
+  'emergency.shareOutro': 'Ich brauche möglicherweise Hilfe, wenn du das erhältst.',
   'emergency.settingsLabel': 'Notfall-Knopf anzeigen',
   'emergency.settingsHint':
     'Zeigt oben einen roten Notfall-Knopf: wichtige Sätze in der Landessprache, dein Standort und ein Zwei-Wege-Dolmetscher.',
@@ -420,7 +421,8 @@ const en: Record<string, string> = {
   // emergency mode
   'emergency.title': 'Emergency',
   'emergency.shareLocation': 'Share location',
-  'emergency.shareIntro': 'My current location:',
+  'emergency.shareIntro': 'This is a distress call. My current location is',
+  'emergency.shareOutro': 'I may need help when you receive this.',
   'emergency.settingsLabel': 'Show emergency button',
   'emergency.settingsHint':
     'Shows a red emergency button at the top: key phrases in the local language, your location, and a two-way interpreter.',
@@ -621,7 +623,8 @@ const zh: Record<string, string> = {
   // emergency mode
   'emergency.title': '紧急情况',
   'emergency.shareLocation': '分享位置',
-  'emergency.shareIntro': '我当前的位置：',
+  'emergency.shareIntro': '这是一个求救信号。我当前的位置是',
+  'emergency.shareOutro': '当你收到这条信息时，我可能需要帮助。',
   'emergency.settingsLabel': '显示紧急按钮',
   'emergency.settingsHint': '在顶部显示红色紧急按钮：当地语言的关键句子、你的位置，以及双向翻译。',
   'emergency.phrases': '关键句子',
@@ -820,7 +823,8 @@ const zhTW: Record<string, string> = {
   // emergency mode
   'emergency.title': '緊急情況',
   'emergency.shareLocation': '分享位置',
-  'emergency.shareIntro': '我目前的位置：',
+  'emergency.shareIntro': '這是一個求救訊號。我目前的位置是',
+  'emergency.shareOutro': '當你收到這則訊息時，我可能需要幫助。',
   'emergency.settingsLabel': '顯示緊急按鈕',
   'emergency.settingsHint': '在頂部顯示紅色緊急按鈕：當地語言的關鍵句子、你的位置，以及雙向翻譯。',
   'emergency.phrases': '關鍵句子',
@@ -1022,7 +1026,8 @@ const id: Record<string, string> = {
   // emergency mode
   'emergency.title': 'Darurat',
   'emergency.shareLocation': 'Bagikan lokasi',
-  'emergency.shareIntro': 'Lokasi saya saat ini:',
+  'emergency.shareIntro': 'Ini panggilan darurat. Lokasi saya saat ini adalah',
+  'emergency.shareOutro': 'Saya mungkin membutuhkan bantuan saat Anda menerima ini.',
   'emergency.settingsLabel': 'Tampilkan tombol darurat',
   'emergency.settingsHint':
     'Menampilkan tombol darurat merah di atas: kalimat penting dalam bahasa setempat, lokasimu, dan penerjemah dua arah.',
@@ -1226,7 +1231,8 @@ const ms: Record<string, string> = {
   // emergency mode
   'emergency.title': 'Kecemasan',
   'emergency.shareLocation': 'Kongsi lokasi',
-  'emergency.shareIntro': 'Lokasi semasa saya:',
+  'emergency.shareIntro': 'Ini panggilan kecemasan. Lokasi semasa saya ialah',
+  'emergency.shareOutro': 'Saya mungkin memerlukan bantuan apabila anda menerima ini.',
   'emergency.settingsLabel': 'Tunjukkan butang kecemasan',
   'emergency.settingsHint':
     'Menunjukkan butang kecemasan merah di atas: ayat penting dalam bahasa tempatan, lokasi anda, dan jurubahasa dua hala.',
@@ -1433,7 +1439,8 @@ const ar: Record<string, string> = {
   // emergency mode
   'emergency.title': 'الطوارئ',
   'emergency.shareLocation': 'مشاركة الموقع',
-  'emergency.shareIntro': 'موقعي الحالي:',
+  'emergency.shareIntro': 'هذه مكالمة استغاثة. موقعي الحالي هو',
+  'emergency.shareOutro': 'قد أحتاج إلى مساعدة عندما تصلك هذه الرسالة.',
   'emergency.settingsLabel': 'إظهار زر الطوارئ',
   'emergency.settingsHint':
     'يعرض زر طوارئ أحمر في الأعلى: عبارات مهمة باللغة المحلية، وموقعك، ومترجمًا فوريًا باتجاهين.',

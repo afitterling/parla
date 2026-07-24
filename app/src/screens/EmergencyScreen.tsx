@@ -152,7 +152,13 @@ export function EmergencyScreen({ visible, onClose, settings }: Props) {
     if (loc.status !== 'ready') return;
     const query = loc.coords.replace(/\s/g, ''); // "lat, lng" → "lat,lng"
     const mapsUrl = `https://maps.google.com/?q=${query}`;
-    const message = [t('emergency.shareIntro'), loc.address, loc.coords, mapsUrl]
+    // A distress-call message: what it is, where I am, and what I need.
+    const where = [loc.address, loc.coords].filter(Boolean).join(' — ');
+    const message = [
+      `${t('emergency.shareIntro')} ${where}`,
+      mapsUrl,
+      t('emergency.shareOutro'),
+    ]
       .filter(Boolean)
       .join('\n');
     try {
