@@ -24,6 +24,7 @@ import { findLanguage, speechLocale } from '../languages';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
+import { TagFilterRow, useTaggedList } from '../components/TaggedList';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { useT } from '../i18n/I18nContext';
 
@@ -165,48 +166,12 @@ function ListView({
   const t = useT();
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const [search, setSearch] = useState('');
-  const [ordering, setOrdering] = useState<'latest' | 'tag'>('latest');
-  const [filterTag, setFilterTag] = useState<string | null>(null);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return phrases.filter((p) => {
-      const matchSearch =
-        !q ||
-        p.target.toLowerCase().includes(q) ||
-        p.translation.toLowerCase().includes(q) ||
-        p.tags.some((t) => t.toLowerCase().includes(q));
-      const matchTag =
-        !filterTag || p.tags.some((t) => t.toLowerCase() === filterTag.toLowerCase());
-      return matchSearch && matchTag;
-    });
-  }, [phrases, search, filterTag]);
-
-  const latest = useMemo(
-    () => [...filtered].sort((a, b) => b.createdAt - a.createdAt),
-    [filtered]
-  );
-
-  const sections = useMemo(() => {
-    const tagSet = new Set<string>();
-    filtered.forEach((p) => p.tags.forEach((t) => tagSet.add(t)));
-    let tagList = [...tagSet].sort((a, b) => a.localeCompare(b));
-    if (filterTag) tagList = tagList.filter((t) => t.toLowerCase() === filterTag.toLowerCase());
-    const secs = tagList.map((tag) => ({
-      title: tag,
-      data: filtered
-        .filter((p) => p.tags.some((t) => t.toLowerCase() === tag.toLowerCase()))
-        .sort((a, b) => b.createdAt - a.createdAt),
-    }));
-    if (!filterTag) {
-      const untagged = filtered
-        .filter((p) => p.tags.length === 0)
-        .sort((a, b) => b.createdAt - a.createdAt);
-      if (untagged.length) secs.push({ title: t('phrase.untagged'), data: untagged });
-    }
-    return secs;
-  }, [filtered, filterTag]);
+  const { search, setSearch, ordering, setOrdering, filterTags, setFilterTags, latest, sections } =
+    useTaggedList(
+      phrases,
+      (p) => `${p.target} ${p.translation} ${p.tags.join(' ')}`.toLowerCase(),
+      t('phrase.untagged')
+    );
 
   if (phrases.length === 0) {
     return (
@@ -247,7 +212,12 @@ function ListView({
         </View>
       </View>
 
-      <TagFilterRow tags={tagSuggestions} value={filterTag} onChange={setFilterTag} />
+      <TagFilterRow
+        tags={tagSuggestions}
+        value={filterTags}
+        onChange={setFilterTags}
+        allLabel={t('common.all')}
+      />
 
       {ordering === 'latest' ? (
         <FlatList
@@ -522,7 +492,14 @@ function TrainView({
         </View>
 
         <Text style={styles.trainHint}>{t('train.whichPhrases')}</Text>
-        <TagFilterRow tags={tagSuggestions} value={sessionTag} onChange={setSessionTag} />
+        {/* Training scopes to a single tag — keep it single-select by taking the
+            last-tapped chip (the shared row is multi-select). */}
+        <TagFilterRow
+          tags={tagSuggestions}
+          value={sessionTag ? [sessionTag] : []}
+          onChange={(next) => setSessionTag(next.length ? next[next.length - 1] : null)}
+          allLabel={t('common.all')}
+        />
 
         <View style={styles.trainCenter}>
           <Text style={styles.poolCount}>
@@ -776,44 +753,6 @@ function QuizView({
 }
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
-function TagFilterRow({
-  tags,
-  value,
-  onChange,
-}: {
-  tags: string[];
-  value: string | null;
-  onChange: (v: string | null) => void;
-}) {
-  const t = useT();
-  const styles = useStyles(makeStyles);
-  if (tags.length === 0) return null;
-  return (
-    <View style={styles.filterRow}>
-      <Pressable
-        style={[styles.filterChip, value === null && styles.filterChipOn]}
-        onPress={() => onChange(null)}
-      >
-        <Text style={[styles.filterChipText, value === null && styles.filterChipTextOn]}>
-          {t('common.all')}
-        </Text>
-      </Pressable>
-      {tags.map((tag) => {
-        const on = value?.toLowerCase() === tag.toLowerCase();
-        return (
-          <Pressable
-            key={tag}
-            style={[styles.filterChip, on && styles.filterChipOn]}
-            onPress={() => onChange(on ? null : tag)}
-          >
-            <Text style={[styles.filterChipText, on && styles.filterChipTextOn]}>{tag}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 function Seg({
   icon,
   label,
@@ -907,26 +846,6 @@ function makeStyles(theme: Theme) {
   orderBtnActive: { backgroundColor: theme.colors.accent2 },
   orderText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   orderTextActive: { color: '#001b1f' },
-
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
-  },
-  filterChip: {
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    borderRadius: theme.radius.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    backgroundColor: theme.colors.bgElevated,
-  },
-  filterChipOn: { borderColor: theme.colors.accent, backgroundColor: theme.colors.accentDim },
-  filterChipText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
-  filterChipTextOn: { color: theme.colors.text },
 
   list: { padding: 16, gap: 10 },
   sectionHeader: {

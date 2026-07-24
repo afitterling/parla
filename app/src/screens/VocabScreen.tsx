@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -15,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { Settings, VocabItem } from '../storage';
+import { recentTags, Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
 import { generateVocabExample, transcribeAudio, translateVocabTerm } from '../api';
 import { findLanguage, speechLocale, usesHanzi } from '../languages';
@@ -23,6 +24,7 @@ import { useRecorder } from '../useRecorder';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges } from '../components/TagModal';
+import { TagFilterRow, useTaggedList } from '../components/TaggedList';
 import { WordCard } from '../components/WordCard';
 import { hasHanzi } from '../strokes';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
@@ -58,6 +60,14 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
+
+  // Search + tag-filter + group-by-tag over the shown words (shared with Phrases).
+  const { search, setSearch, ordering, setOrdering, filterTags, setFilterTags, latest, sections } =
+    useTaggedList(
+      shown,
+      (v) => `${v.term} ${v.pinyin ?? ''} ${v.translation} ${v.tags.join(' ')}`.toLowerCase(),
+      t('phrase.untagged')
+    );
 
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
@@ -414,22 +424,88 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={shown}
-          keyExtractor={(i) => i.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <Row
-              item={item}
-              onRemove={onRemove}
-              onUpdate={onUpdate}
-              onGenerate={generateExample}
-              tagSuggestions={tagSuggestions}
-              openaiKey={settings.openaiKey}
-              t={t}
+        <>
+          <View style={styles.controls}>
+            <TextInput
+              style={styles.search}
+              placeholder={t('vocab.searchPlaceholder')}
+              placeholderTextColor={theme.colors.textFaint}
+              value={search}
+              onChangeText={setSearch}
+            />
+            <View style={styles.orderToggle}>
+              <Pressable
+                style={[styles.orderBtn, ordering === 'latest' && styles.orderBtnActive]}
+                onPress={() => setOrdering('latest')}
+              >
+                <Text style={[styles.orderText, ordering === 'latest' && styles.orderTextActive]}>
+                  {t('phrase.latest')}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.orderBtn, ordering === 'tag' && styles.orderBtnActive]}
+                onPress={() => setOrdering('tag')}
+              >
+                <Text style={[styles.orderText, ordering === 'tag' && styles.orderTextActive]}>
+                  {t('phrase.byTag')}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <TagFilterRow
+            tags={recentTags(shown)}
+            value={filterTags}
+            onChange={setFilterTags}
+            allLabel={t('common.all')}
+          />
+
+          {ordering === 'latest' ? (
+            <FlatList
+              data={latest}
+              keyExtractor={(i) => i.id}
+              contentContainerStyle={styles.list}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Row
+                  item={item}
+                  onRemove={onRemove}
+                  onUpdate={onUpdate}
+                  onGenerate={generateExample}
+                  tagSuggestions={tagSuggestions}
+                  openaiKey={settings.openaiKey}
+                  t={t}
+                />
+              )}
+              ListEmptyComponent={<Text style={styles.noMatch}>{t('phrase.noMatch')}</Text>}
+            />
+          ) : (
+            <SectionList
+              sections={sections}
+              keyExtractor={(i) => i.id}
+              contentContainerStyle={styles.list}
+              keyboardShouldPersistTaps="handled"
+              stickySectionHeadersEnabled={false}
+              renderSectionHeader={({ section }) => (
+                <Text style={styles.sectionHeader}>
+                  {section.title}  ·  {section.data.length}
+                </Text>
+              )}
+              renderItem={({ item }) => (
+                <Row
+                  item={item}
+                  onRemove={onRemove}
+                  onUpdate={onUpdate}
+                  onGenerate={generateExample}
+                  tagSuggestions={tagSuggestions}
+                  openaiKey={settings.openaiKey}
+                  t={t}
+                />
+              )}
+              ListEmptyComponent={<Text style={styles.noMatch}>{t('phrase.noMatch')}</Text>}
             />
           )}
-        />
+        </>
       )}
         </>
       )}
@@ -746,6 +822,37 @@ function makeStyles(theme: Theme) {
   empty: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 32 },
   emptyEmoji: { fontSize: 52 },
   emptyText: { color: theme.colors.textMuted, fontSize: 14, textAlign: 'center', marginTop: 12, lineHeight: 20 },
+
+  controls: { paddingHorizontal: 16, gap: 10 },
+  search: {
+    backgroundColor: theme.colors.bgElevated,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'ios' ? 11 : 7,
+    color: theme.colors.text,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+  },
+  orderToggle: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.bgElevated,
+    borderRadius: theme.radius.pill,
+    padding: 3,
+  },
+  orderBtn: { flex: 1, paddingVertical: 8, borderRadius: theme.radius.pill, alignItems: 'center' },
+  orderBtnActive: { backgroundColor: theme.colors.accent2 },
+  orderText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
+  orderTextActive: { color: '#001b1f' },
+  sectionHeader: {
+    color: theme.colors.accent,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  noMatch: { color: theme.colors.textFaint, fontSize: 14, textAlign: 'center', padding: 24 },
 
   list: { padding: 16, gap: 10 },
   row: {
