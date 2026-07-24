@@ -5,6 +5,7 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -144,6 +145,23 @@ export function EmergencyScreen({ visible, onClose, settings }: Props) {
     setBusy(null);
   }
 
+  // Share the current location as text through the native share sheet, so it can
+  // go out via Messages, Mail, WhatsApp — whatever the user picks. Includes a
+  // maps link so the recipient can open it directly.
+  async function shareLocation() {
+    if (loc.status !== 'ready') return;
+    const query = loc.coords.replace(/\s/g, ''); // "lat, lng" → "lat,lng"
+    const mapsUrl = `https://maps.google.com/?q=${query}`;
+    const message = [t('emergency.shareIntro'), loc.address, loc.coords, mapsUrl]
+      .filter(Boolean)
+      .join('\n');
+    try {
+      await Share.share({ message });
+    } catch {
+      // user dismissed the share sheet, or sharing unavailable — nothing to do
+    }
+  }
+
   // One interpreter turn: tap a side's button to record, tap it again to stop —
   // then Whisper transcribes in that side's language, the translation into the
   // other language is shown big and spoken aloud. Then the other side taps.
@@ -211,6 +229,16 @@ export function EmergencyScreen({ visible, onClose, settings }: Props) {
               {input.nativeName} ↔ {goal.nativeName}
             </Text>
           </View>
+          {/* Share the current location — enabled once the fix is in. */}
+          <Pressable
+            onPress={shareLocation}
+            hitSlop={10}
+            disabled={loc.status !== 'ready'}
+            style={[styles.shareBtn, loc.status !== 'ready' && styles.shareBtnDisabled]}
+            accessibilityLabel={t('emergency.shareLocation')}
+          >
+            <Ionicons name="share-outline" size={20} color="#fff" />
+          </Pressable>
           <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color={theme.colors.text} />
           </Pressable>
@@ -341,6 +369,15 @@ function makeStyles(theme: Theme) {
     },
     title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
     subtitle: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600', marginTop: 1 },
+    shareBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 13,
+      backgroundColor: theme.colors.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    shareBtnDisabled: { opacity: 0.4 },
     closeBtn: { padding: 4 },
     content: { padding: 16, paddingBottom: 24 },
     locCard: {

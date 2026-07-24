@@ -95,6 +95,7 @@ const de: Record<string, string> = {
   // vocab
   'vocab.one': 'Vokabel',
   'vocab.many': 'Vokabeln',
+  'vocab.searchPlaceholder': 'Vokabeln durchsuchen …',
   'vocab.wordPlaceholder': 'Wort auf {lang}',
   'vocab.translationPlaceholder': 'Übersetzung auf {lang}',
   'vocab.emptyText':
@@ -210,6 +211,8 @@ const de: Record<string, string> = {
   'tagModal.remove': 'Entfernen',
   // emergency mode
   'emergency.title': 'Notfall',
+  'emergency.shareLocation': 'Standort teilen',
+  'emergency.shareIntro': 'Mein aktueller Standort:',
   'emergency.settingsLabel': 'Notfall-Knopf anzeigen',
   'emergency.settingsHint':
     'Zeigt oben einen roten Notfall-Knopf: wichtige Sätze in der Landessprache, dein Standort und ein Zwei-Wege-Dolmetscher.',
@@ -307,6 +310,7 @@ const en: Record<string, string> = {
   'bubble.you': 'YOU',
   'vocab.one': 'word',
   'vocab.many': 'words',
+  'vocab.searchPlaceholder': 'Search words …',
   'vocab.wordPlaceholder': 'Word in {lang}',
   'vocab.translationPlaceholder': 'Translation in {lang}',
   'vocab.emptyText':
@@ -415,6 +419,8 @@ const en: Record<string, string> = {
   'tagModal.remove': 'Remove',
   // emergency mode
   'emergency.title': 'Emergency',
+  'emergency.shareLocation': 'Share location',
+  'emergency.shareIntro': 'My current location:',
   'emergency.settingsLabel': 'Show emergency button',
   'emergency.settingsHint':
     'Shows a red emergency button at the top: key phrases in the local language, your location, and a two-way interpreter.',
@@ -512,6 +518,7 @@ const zh: Record<string, string> = {
   'bubble.you': '你',
   'vocab.one': '个词',
   'vocab.many': '个词',
+  'vocab.searchPlaceholder': '搜索单词 …',
   'vocab.wordPlaceholder': '{lang}的词',
   'vocab.translationPlaceholder': '{lang}的翻译',
   'vocab.emptyText': '还没有{lang}词汇。从对话中保存词语，或手动添加。',
@@ -613,6 +620,8 @@ const zh: Record<string, string> = {
   'tagModal.close': '完成',
   // emergency mode
   'emergency.title': '紧急情况',
+  'emergency.shareLocation': '分享位置',
+  'emergency.shareIntro': '我当前的位置：',
   'emergency.settingsLabel': '显示紧急按钮',
   'emergency.settingsHint': '在顶部显示红色紧急按钮：当地语言的关键句子、你的位置，以及双向翻译。',
   'emergency.phrases': '关键句子',
@@ -708,6 +717,7 @@ const zhTW: Record<string, string> = {
   'bubble.you': '你',
   'vocab.one': '個詞',
   'vocab.many': '個詞',
+  'vocab.searchPlaceholder': '搜尋單詞 …',
   'vocab.wordPlaceholder': '{lang}的詞',
   'vocab.translationPlaceholder': '{lang}的翻譯',
   'vocab.emptyText': '還沒有{lang}詞彙。從對話中儲存詞語，或手動新增。',
@@ -809,6 +819,8 @@ const zhTW: Record<string, string> = {
   'tagModal.close': '完成',
   // emergency mode
   'emergency.title': '緊急情況',
+  'emergency.shareLocation': '分享位置',
+  'emergency.shareIntro': '我目前的位置：',
   'emergency.settingsLabel': '顯示緊急按鈕',
   'emergency.settingsHint': '在頂部顯示紅色緊急按鈕：當地語言的關鍵句子、你的位置，以及雙向翻譯。',
   'emergency.phrases': '關鍵句子',
@@ -904,6 +916,7 @@ const id: Record<string, string> = {
   'bubble.you': 'KAMU',
   'vocab.one': 'kata',
   'vocab.many': 'kata',
+  'vocab.searchPlaceholder': 'Cari kosakata …',
   'vocab.wordPlaceholder': 'Kata dalam {lang}',
   'vocab.translationPlaceholder': 'Terjemahan dalam {lang}',
   'vocab.emptyText':
@@ -1008,6 +1021,8 @@ const id: Record<string, string> = {
   'tagModal.close': 'Selesai',
   // emergency mode
   'emergency.title': 'Darurat',
+  'emergency.shareLocation': 'Bagikan lokasi',
+  'emergency.shareIntro': 'Lokasi saya saat ini:',
   'emergency.settingsLabel': 'Tampilkan tombol darurat',
   'emergency.settingsHint':
     'Menampilkan tombol darurat merah di atas: kalimat penting dalam bahasa setempat, lokasimu, dan penerjemah dua arah.',
@@ -1105,6 +1120,7 @@ const ms: Record<string, string> = {
   'bubble.you': 'ANDA',
   'vocab.one': 'perkataan',
   'vocab.many': 'perkataan',
+  'vocab.searchPlaceholder': 'Cari perbendaharaan kata …',
   'vocab.wordPlaceholder': 'Perkataan dalam {lang}',
   'vocab.translationPlaceholder': 'Terjemahan dalam {lang}',
   'vocab.emptyText':
@@ -1209,6 +1225,8 @@ const ms: Record<string, string> = {
   'tagModal.close': 'Selesai',
   // emergency mode
   'emergency.title': 'Kecemasan',
+  'emergency.shareLocation': 'Kongsi lokasi',
+  'emergency.shareIntro': 'Lokasi semasa saya:',
   'emergency.settingsLabel': 'Tunjukkan butang kecemasan',
   'emergency.settingsHint':
     'Menunjukkan butang kecemasan merah di atas: ayat penting dalam bahasa tempatan, lokasi anda, dan jurubahasa dua hala.',
@@ -1308,6 +1326,7 @@ const ar: Record<string, string> = {
   'bubble.you': 'أنت',
   'vocab.one': 'كلمة',
   'vocab.many': 'كلمات',
+  'vocab.searchPlaceholder': 'ابحث في المفردات …',
   'vocab.wordPlaceholder': 'كلمة بـ{lang}',
   'vocab.translationPlaceholder': 'الترجمة بـ{lang}',
   'vocab.emptyText': 'لا توجد كلمات بـ{lang} بعد. احفظ كلمات من الحوار أو أضفها يدوياً.',
@@ -1413,6 +1432,8 @@ const ar: Record<string, string> = {
   'tagModal.remove': 'إزالة',
   // emergency mode
   'emergency.title': 'الطوارئ',
+  'emergency.shareLocation': 'مشاركة الموقع',
+  'emergency.shareIntro': 'موقعي الحالي:',
   'emergency.settingsLabel': 'إظهار زر الطوارئ',
   'emergency.settingsHint':
     'يعرض زر طوارئ أحمر في الأعلى: عبارات مهمة باللغة المحلية، وموقعك، ومترجمًا فوريًا باتجاهين.',
