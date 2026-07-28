@@ -13,7 +13,13 @@ interface ImportMeta {
 interface ParlaBridge {
   read(name: string): Promise<string | null>;
   write(name: string, content: string): Promise<void>;
-  info(): Promise<{ version: string; dataDir: string; platform: string; electron: string }>;
+  info(): Promise<{
+    version: string;
+    dataDir: string;
+    icloud: boolean;
+    platform: string;
+    electron: string;
+  }>;
 }
 
 interface Window {

@@ -9,8 +9,13 @@ import {
   Monitor,
   Sun,
   Moon,
+  Plus,
+  X,
+  Check,
+  Cloud,
+  CloudOff,
 } from 'lucide-react';
-import { Settings } from '../storage';
+import { Settings, iCloudStatus } from '../storage';
 import { findLanguage } from '../languages';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
@@ -20,9 +25,12 @@ type Props = {
   settings: Settings;
   onChangeInputLanguage: (code: string) => void;
   onChangeGoalLanguage: (code: string) => void;
+  onAddLearnLanguage: (code: string) => void;
+  onRemoveLearnLanguage: (code: string) => void;
   setUiLanguage: (code: string) => void;
   setDefaultMode: (mode: 'free' | 'ask') => void;
   setTheme: (mode: 'light' | 'dark' | 'system') => void;
+  setEmergencyEnabled: (value: boolean) => void;
   setPro: (value: boolean) => void;
   purchasePro: () => void;
   restorePurchases: () => void;
@@ -32,22 +40,31 @@ export function SettingsScreen({
   settings,
   onChangeInputLanguage,
   onChangeGoalLanguage,
+  onAddLearnLanguage,
+  onRemoveLearnLanguage,
   setUiLanguage,
   setDefaultMode,
   setTheme,
+  setEmergencyEnabled,
   setPro,
   purchasePro,
   restorePurchases,
 }: Props) {
   const t = useT();
-  const [picker, setPicker] = useState<'input' | 'goal' | null>(null);
+  const [picker, setPicker] = useState<'input' | 'learn' | null>(null);
   const [copied, setCopied] = useState(false);
-  const [info, setInfo] = useState<{ version: string; dataDir: string; platform: string; electron: string } | null>(
-    null
-  );
+  const [info, setInfo] = useState<{
+    version: string;
+    dataDir: string;
+    icloud: boolean;
+    platform: string;
+    electron: string;
+  } | null>(null);
+  const [sync, setSync] = useState<{ linked: boolean; available: boolean } | null>(null);
 
   useEffect(() => {
     window.parla?.info().then(setInfo).catch(() => setInfo(null));
+    iCloudStatus().then(setSync).catch(() => setSync(null));
   }, []);
 
   const debugRows: { label: string; value: string }[] = [
@@ -131,11 +148,46 @@ export function SettingsScreen({
         </button>
 
         <div className="label">{t('settings.iLearnGoal')}</div>
-        <button className="selector" onClick={() => setPicker('goal')}>
-          <GraduationCap size={20} className="ink" />
-          <span className="selector-value">{findLanguage(settings.goalLanguage).nativeName}</span>
-          <ChevronRight size={18} />
-        </button>
+        <div className="learn-langs">
+          {settings.learnLanguages.map((code) => {
+            const active = code === settings.goalLanguage;
+            return (
+              <span key={code} className={`learn-chip${active ? ' active' : ''}`}>
+                <button className="learn-chip-main" onClick={() => onChangeGoalLanguage(code)}>
+                  {active && <Check size={13} />}
+                  {findLanguage(code).nativeName}
+                </button>
+                {!active && (
+                  <button
+                    className="learn-chip-x"
+                    onClick={() => onRemoveLearnLanguage(code)}
+                    aria-label={t('common.cancel')}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+          <button className="learn-chip add" onClick={() => setPicker('learn')}>
+            <Plus size={14} />
+            {t('common.new')}
+          </button>
+        </div>
+
+        <div className="label">{t('settings.emergency').toUpperCase()}</div>
+        <div className="scard">
+          <label className="switch-row">
+            <span>{t('settings.emergencyEnable')}</span>
+            <input
+              type="checkbox"
+              className="switch"
+              checked={settings.emergencyEnabled}
+              onChange={(e) => setEmergencyEnabled(e.target.checked)}
+            />
+          </label>
+          <p className="hint">{t('settings.emergencyHint')}</p>
+        </div>
 
         <div className="label">{t('settings.parlaPro')}</div>
         <div className="scard">
@@ -175,6 +227,10 @@ export function SettingsScreen({
           <>
             <div className="label">{t('settings.dataDir').toUpperCase()}</div>
             <div className="scard">
+              <div className={`sync-status${sync?.available ? ' on' : ''}`}>
+                {sync?.available ? <Cloud size={16} /> : <CloudOff size={16} />}
+                {sync?.available ? t('settings.syncOn') : t('settings.syncLocal')}
+              </div>
               <div className="data-path">{info.dataDir}</div>
               <p className="hint">{t('settings.dataHint')}</p>
             </div>
@@ -186,9 +242,14 @@ export function SettingsScreen({
         visible={picker !== null}
         title={picker === 'input' ? t('settings.iSpeakInput') : t('settings.iLearnGoal')}
         selectedCode={picker === 'input' ? settings.inputLanguage : settings.goalLanguage}
-        onSelect={(code) =>
-          picker === 'input' ? onChangeInputLanguage(code) : onChangeGoalLanguage(code)
-        }
+        onSelect={(code) => {
+          if (picker === 'input') onChangeInputLanguage(code);
+          else {
+            // Add to the learn set and make it the active goal.
+            onAddLearnLanguage(code);
+            onChangeGoalLanguage(code);
+          }
+        }}
         onClose={() => setPicker(null)}
       />
     </div>

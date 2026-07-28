@@ -243,6 +243,404 @@ function parseDialogReply(text: string): DialogReply {
   return { target: text.trim(), translation: '', vocab: [], raw: text };
 }
 
+// ── Generate an example sentence for a saved vocabulary word ──────────────────
+// The Vocabulary screen uses this to enrich a word with a natural example
+// sentence, its transliteration (Pinyin/Romaji, when the goal language uses one),
+// and a translation into the learner's language.
+export type VocabExample = {
+  termPinyin?: string; // transliteration of the word itself (fills a missing word pinyin)
+  example: string;
+  examplePinyin?: string;
+  exampleTranslation?: string;
+};
+
+export async function generateVocabExample(
+  openaiKey: string,
+  term: string,
+  goalLang: Language,
+  inputLang: Language,
+  wantPinyin: boolean,
+  signal?: AbortSignal
+): Promise<VocabExample> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const termPinyinField = wantPinyin
+    ? `\n  "termPinyin": "<lateinische Umschrift/Transliteration des Wortes/der Wendung selbst>",`
+    : '';
+  const pinyinField = wantPinyin
+    ? `\n  "examplePinyin": "<lateinische Umschrift/Transliteration des Beispielsatzes als Lesehilfe>",`
+    : '';
+  const pinyinRule = wantPinyin
+    ? `\n- "termPinyin" und "examplePinyin": IMMER die lateinische Umschrift (des Wortes bzw. des Beispielsatzes) im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du bist ein Sprachlehrer für ${goalLang.label} (${goalLang.nativeName}). Bilde EINEN kurzen, natürlichen Beispielsatz für Anfänger, der das gegebene Wort bzw. die Wendung enthält.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${termPinyinField}
+  "example": "<kurzer Beispielsatz auf ${goalLang.nativeName}, der das Wort enthält>",${pinyinField}
+  "exampleTranslation": "<Übersetzung des Beispielsatzes auf ${inputLang.nativeName}>"
+}
+
+Regeln:
+- Der Satz MUSS das gegebene Wort/die Wendung enthalten.
+- Kurz, klar und auf Anfängerniveau.${pinyinRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const body = JSON.stringify({
+    model: CHAT_MODEL,
+    max_tokens: 300,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: term },
+    ],
+  });
+
+  let res: Response | null = null;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 60000);
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+        body,
+        signal: s,
+      });
+      done();
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
+    }
+  }
+  if (!res) {
+    throw new Error(
+      lastErr?.name === 'AbortError'
+        ? 'Zeitüberschreitung — Netzwerk langsam. Nochmal versuchen.'
+        : 'Netzwerkfehler — bitte nochmal versuchen.'
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const text: string = data?.choices?.[0]?.message?.content ?? '';
+  const json = extractJson(text);
+  if (!json || typeof json.example !== 'string' || !json.example.trim()) {
+    throw new Error('Kein Beispielsatz erhalten — bitte nochmal versuchen.');
+  }
+  return {
+    termPinyin:
+      wantPinyin && typeof json.termPinyin === 'string' && json.termPinyin.trim()
+        ? String(json.termPinyin).trim()
+        : undefined,
+    example: String(json.example).trim(),
+    examplePinyin:
+      wantPinyin && typeof json.examplePinyin === 'string' && json.examplePinyin.trim()
+        ? String(json.examplePinyin).trim()
+        : undefined,
+    exampleTranslation:
+      typeof json.exampleTranslation === 'string' && json.exampleTranslation.trim()
+        ? String(json.exampleTranslation).trim()
+        : undefined,
+  };
+}
+
+// ── Transliteration only ─────────────────────────────────────────────────────
+// Backfills the reading (Pinyin/Romaji/…) of a single word or phrase that was
+// saved without one — e.g. typed in by hand, or saved while the Pinyin toggle
+// was off. Deliberately narrower (and cheaper) than generateVocabExample.
+export async function transliterate(
+  openaiKey: string,
+  term: string,
+  goalLang: Language,
+  signal?: AbortSignal
+): Promise<string> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const system = `Du transliterierst ${goalLang.label} (${goalLang.nativeName}) in lateinische Schrift.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{ "pinyin": "<lateinische Umschrift des gegebenen Wortes/Satzes>" }
+
+Regeln:
+- Nutze das gängige System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, Russisch/Griechisch/Arabisch/Hebräisch/Thai/Hindi usw.: übliche Transliteration).
+- Nur die Umschrift, keine Übersetzung und keine Erklärung.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const { signal: s, done } = linkSignals(signal, 30000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: 200,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: term },
+        ],
+      }),
+      signal: s,
+    });
+  } finally {
+    done();
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const pinyin = typeof json?.pinyin === 'string' ? json.pinyin.trim() : '';
+  if (!pinyin) throw new Error('Keine Umschrift erhalten — bitte nochmal versuchen.');
+  return pinyin;
+}
+
+// ── Translate a single vocab term ────────────────────────────────────────────
+// The add card lets the learner enter only ONE side of the pair (either the
+// goal-language word or its translation); this fills in the other side. When
+// the target is the goal language and it uses a reading aid, the reading is
+// returned too, so the word is saved complete without a second call.
+export async function translateVocabTerm(
+  openaiKey: string,
+  text: string,
+  from: Language,
+  to: Language,
+  wantReading: boolean,
+  signal?: AbortSignal
+): Promise<{ text: string; reading?: string }> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const readingField = wantReading
+    ? `\n  "reading": "<lateinische Umschrift/Transliteration der Übersetzung>",`
+    : '';
+  const readingRule = wantReading
+    ? `\n- "reading": IMMER die lateinische Umschrift der Übersetzung im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du bist ein Wörterbuch von ${from.label} (${from.nativeName}) nach ${to.label} (${to.nativeName}). Übersetze das gegebene Wort bzw. die kurze Wendung.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${readingField}
+  "translation": "<die gebräuchlichste Übersetzung auf ${to.nativeName}>"
+}
+
+Regeln:
+- Gib die EINE gebräuchlichste Übersetzung, keine Alternativen, keine Erklärung.
+- Nur das Wort/die Wendung selbst — kein ganzer Satz, keine Satzzeichen.${readingRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    to.promptHint ? `\n- ${to.promptHint}` : ''
+  }`;
+
+  const { signal: s, done } = linkSignals(signal, 30000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: 200,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: text },
+        ],
+      }),
+      signal: s,
+    });
+  } finally {
+    done();
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const translation = typeof json?.translation === 'string' ? json.translation.trim() : '';
+  if (!translation) throw new Error('Keine Übersetzung erhalten — bitte nochmal versuchen.');
+  return {
+    text: translation,
+    reading:
+      wantReading && typeof json?.reading === 'string' && json.reading.trim()
+        ? String(json.reading).trim()
+        : undefined,
+  };
+}
+
+// ── "How would I say …" (phrase add card) ────────────────────────────────────
+// Unlike the vocab dictionary lookup above this translates a whole utterance:
+// the learner types what they want to say and gets the sentence a native
+// speaker would actually use — including the reading, so it saves complete.
+export async function translatePhrase(
+  openaiKey: string,
+  text: string,
+  from: Language,
+  to: Language,
+  wantReading: boolean,
+  signal?: AbortSignal
+): Promise<{ text: string; reading?: string }> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const readingField = wantReading
+    ? `\n  "reading": "<lateinische Umschrift/Transliteration der Übersetzung>",`
+    : '';
+  const readingRule = wantReading
+    ? `\n- "reading": IMMER die lateinische Umschrift der Übersetzung im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du übersetzt für einen Sprachlerner, der die Wendung genau so sagen möchte, von ${from.label} (${from.nativeName}) nach ${to.label} (${to.nativeName}).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${readingField}
+  "translation": "<die Wendung auf ${to.nativeName}>"
+}
+
+Regeln:
+- Übersetze natürlich und idiomatisch — so, wie Muttersprachler es im Alltag wirklich sagen, nicht Wort für Wort.
+- Höflich-neutraler Umgangston, außer die Vorlage ist erkennbar förmlich oder salopp.
+- Behalte die Satzart bei: aus einer Frage wird eine Frage, aus einer Bitte eine Bitte.
+- Gib EINE Formulierung, keine Alternativen, keine Erklärung, keine Anführungszeichen.${readingRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    to.promptHint ? `\n- ${to.promptHint}` : ''
+  }`;
+
+  const { signal: s, done } = linkSignals(signal, 30000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: 400,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: text },
+        ],
+      }),
+      signal: s,
+    });
+  } finally {
+    done();
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const translation = typeof json?.translation === 'string' ? json.translation.trim() : '';
+  if (!translation) throw new Error('Keine Übersetzung erhalten — bitte nochmal versuchen.');
+  return {
+    text: translation,
+    reading:
+      wantReading && typeof json?.reading === 'string' && json.reading.trim()
+        ? String(json.reading).trim()
+        : undefined,
+  };
+}
+
+// ── Translate a spoken utterance (emergency interpreter) ─────────────────────
+// The emergency screen's two-way interpreter: whatever one side said (already
+// transcribed by Whisper) is translated to the other side's language, sentence
+// by sentence, with a Latin reading when the target script needs one. Faithful
+// and complete — no teaching, no simplification.
+export async function translateSpeech(
+  openaiKey: string,
+  text: string,
+  from: Language,
+  to: Language,
+  wantReading: boolean,
+  signal?: AbortSignal
+): Promise<{ text: string; reading?: string }> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const readingField = wantReading
+    ? `\n  "reading": "<lateinische Umschrift/Transliteration der Übersetzung>",`
+    : '';
+  const readingRule = wantReading
+    ? `\n- "reading": IMMER die lateinische Umschrift der Übersetzung im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+  const system = `Du bist ein Dolmetscher in einer NOTFALLSITUATION. Übersetze die gesprochene Äußerung von ${from.label} (${from.nativeName}) nach ${to.label} (${to.nativeName}).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{${readingField}
+  "translation": "<die vollständige Übersetzung auf ${to.nativeName}>"
+}
+
+Regeln:
+- Übersetze treu, vollständig und in einfacher, klarer Sprache — es geht um einen Notfall.
+- Kein Kommentar, keine Rückfrage, keine Auslassung.${readingRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    to.promptHint ? `\n- ${to.promptHint}` : ''
+  }`;
+
+  const body = JSON.stringify({
+    model: CHAT_MODEL,
+    max_tokens: 500,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: text },
+    ],
+  });
+
+  // Timeout + one retry, same as the dialogue — an emergency translation must
+  // not die on one flaky request.
+  let res: Response | null = null;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, 45000);
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+        body,
+        signal: s,
+      });
+      done();
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
+    }
+  }
+  if (!res) {
+    throw new Error(
+      lastErr?.name === 'AbortError'
+        ? 'Zeitüberschreitung — Netzwerk langsam. Nochmal versuchen.'
+        : 'Netzwerkfehler — bitte nochmal versuchen.'
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const translation = typeof json?.translation === 'string' ? json.translation.trim() : '';
+  if (!translation) throw new Error('Keine Übersetzung erhalten — bitte nochmal versuchen.');
+  return {
+    text: translation,
+    reading:
+      wantReading && typeof json?.reading === 'string' && json.reading.trim()
+        ? String(json.reading).trim()
+        : undefined,
+  };
+}
+
 // ── Break a sentence into its individual words/terms ─────────────────────────
 // The dialogue offers a "word for word" action on a translated sentence: it
 // segments the goal-language sentence into its meaningful words/expressions so

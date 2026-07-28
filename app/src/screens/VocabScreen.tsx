@@ -16,12 +16,16 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { recentTags, Settings, VocabItem } from '../storage';
+import { isPaywallActive, recentTags, Settings, VocabItem } from '../storage';
 import { ExportFormat, exportVocab } from '../export';
-import { generateVocabExample, transcribeAudio, translateVocabTerm } from '../api';
+import { generateVocabExample, scanImageForVocab, transcribeAudio, translateVocabTerm } from '../api';
 import { findLanguage, speechLocale, usesHanzi } from '../languages';
 import { useRecorder } from '../useRecorder';
+import { useScanFlow } from '../useScanFlow';
+import { BusyOverlay } from '../components/BusyOverlay';
+import { Paywall } from '../components/Paywall';
 import { SwipeRow } from '../components/SwipeRow';
+import { MicButton } from '../components/MicButton';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges } from '../components/TagModal';
 import { TagFilterRow, useTaggedList } from '../components/TaggedList';
@@ -38,9 +42,18 @@ type Props = {
   onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) => void;
   onUpdate: (id: string, patch: Partial<VocabItem>) => void;
   tagSuggestions: string[];
+  onPurchasePro: () => void;
 };
 
-export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSuggestions }: Props) {
+export function VocabScreen({
+  vocab,
+  settings,
+  onRemove,
+  onAdd,
+  onUpdate,
+  tagSuggestions,
+  onPurchasePro,
+}: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const t = useT();
@@ -88,6 +101,34 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   // Generate the reading whenever the goal language has one; showing it is a
   // separate, display-only setting (see the dialogue's "Aa" toggle).
   const wantPinyin = !!goalLang.romanize;
+
+  // Payment-gated: photograph text (a page, sign, menu …) and turn it into
+  // dictionary entries. Non-Pro Release builds hit the paywall; the local dev
+  // build is exempt (isPaywallActive).
+  const scan = useScanFlow({
+    paywallActive: isPaywallActive(settings.isPro),
+    extract: (base64, signal) =>
+      scanImageForVocab(settings.openaiKey, base64, goalLang, inputLang, wantPinyin, signal),
+    add: (items) =>
+      onAdd(
+        items.map((v) => ({
+          term: v.term,
+          translation: v.translation,
+          pinyin: v.pinyin,
+          lang: settings.goalLanguage,
+        }))
+      ),
+    labels: {
+      menuTitle: t('scan.vocabTitle'),
+      camera: t('scan.camera'),
+      library: t('scan.library'),
+      cancel: t('common.cancel'),
+      reading: t('scan.reading'),
+      none: t('scan.none'),
+      added: (count) => t('scan.addedVocab', { count: String(count) }),
+      permission: t('scan.permission'),
+    },
+  });
 
   // A word still needs enrichment if it lacks an example, a translation for that
   // example, or — when the goal language is transliterated — the word's own
@@ -274,6 +315,14 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
         </View>
         {mode === 'list' && (
           <View style={styles.headerRight}>
+            <Pressable
+              style={styles.exportBtn}
+              onPress={scan.open}
+              hitSlop={8}
+              accessibilityLabel={t('scan.vocabTitle')}
+            >
+              <Ionicons name="scan-outline" size={18} color={theme.colors.accent} />
+            </Pressable>
             {shown.some(needsEnrich) && (
               <Pressable
                 style={styles.exportBtn}
@@ -509,6 +558,16 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
       )}
         </>
       )}
+
+      <BusyOverlay visible={!!scan.busy} label={scan.busy} onCancel={scan.cancel} />
+      <Paywall
+        visible={scan.showPaywall}
+        onClose={scan.closePaywall}
+        onUpgrade={() => {
+          onPurchasePro();
+          scan.closePaywall();
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -530,42 +589,6 @@ function Seg({
     <Pressable style={[styles.segBtn, active && styles.segBtnActive]} onPress={onPress}>
       <Ionicons name={icon} size={15} color={active ? '#fff' : theme.colors.textMuted} />
       <Text style={[styles.segText, active && styles.segTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-// Round mic button used by both add-card fields: idle → mic, recording → stop,
-// transcribing → spinner.
-function MicButton({
-  recording,
-  busy,
-  onPress,
-  label,
-}: {
-  recording: boolean;
-  busy: boolean;
-  onPress: () => void;
-  label: string;
-}) {
-  const styles = useStyles(makeStyles);
-  const theme = useTheme();
-  return (
-    <Pressable
-      style={[styles.micBtn, recording && styles.micBtnActive]}
-      onPress={onPress}
-      disabled={busy}
-      hitSlop={8}
-      accessibilityLabel={label}
-    >
-      {busy ? (
-        <ActivityIndicator size="small" color={theme.colors.accent} />
-      ) : (
-        <Ionicons
-          name={recording ? 'stop' : 'mic-outline'}
-          size={18}
-          color={recording ? '#fff' : theme.colors.accent}
-        />
-      )}
     </Pressable>
   );
 }
@@ -789,15 +812,6 @@ function makeStyles(theme: Theme) {
   },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   inputFlex: { flex: 1 },
-  micBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: theme.radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.accentDim,
-  },
-  micBtnActive: { backgroundColor: theme.colors.danger },
   // Reading of an auto-translated term, previewed before saving.
   addPinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: -4, paddingLeft: 4 },
   translateBtn: {

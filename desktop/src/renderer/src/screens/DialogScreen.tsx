@@ -52,7 +52,7 @@ type Msg = {
 
 type Props = {
   settings: Settings;
-  onAddVocab: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) => void;
+  onAddVocab: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) => void;
   onAddPhrase: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
   onUpdatePhrase: (id: string, patch: Partial<PhraseItem>) => void;
   onChangeInputLanguage: (code: string) => void;

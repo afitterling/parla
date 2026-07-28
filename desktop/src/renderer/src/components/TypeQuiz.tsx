@@ -1,7 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PencilLine, Trophy, CheckCircle2, XCircle, X } from 'lucide-react';
 import { SpeakButton } from './SpeakButton';
+import { answerMatches } from '../answers';
 import { useT } from '../i18n/I18nContext';
+import {
+  QuizScope,
+  QuizPrefs,
+  DEFAULT_QUIZ_PREFS,
+  QUIZ_COUNTS,
+  loadQuizPrefs,
+  saveQuizPrefs,
+} from '../storage';
 
 // One thing to be quizzed. `prompt` is shown (usually the native-language
 // meaning); the learner types `answer` — or, for romanized goal languages, its
@@ -13,6 +22,7 @@ export type QuizItem = {
   pinyin?: string; // romanization — the expected typed answer for romanized langs
   tags: string[];
   lang: string;
+  known?: number; // >0 = already answered correctly before (for skip-learned)
 };
 
 type Props = {
@@ -21,25 +31,12 @@ type Props = {
   answerLangName: string; // goal language name, for the "type in X" hint
   locale: string; // speech locale for the reveal's speak button
   tagSuggestions: string[];
-  onResult?: (id: string, correct: boolean) => void; // persist a review (phrases)
+  scope: QuizScope; // which stored preference set to remember (vocab | phrases | train)
+  onResult?: (id: string, correct: boolean) => void; // persist a review
 };
 
-// Fold away everything that shouldn't matter when comparing a typed answer:
-// tone marks / accents (via NFD + combining-mark strip), case, whitespace and
-// punctuation. So "Gōng chē!" and "gongche" compare equal.
-function normalize(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[\s.,!?;:'’"·、。！？，…()\-—_/]/g, '');
-}
-
 function isCorrect(input: string, item: QuizItem): boolean {
-  const got = normalize(input);
-  if (!got) return false;
-  const accepted = [item.pinyin, item.answer].filter(Boolean).map((s) => normalize(s as string));
-  return accepted.includes(got);
+  return answerMatches(input, [item.pinyin, item.answer]);
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -57,11 +54,14 @@ export function TypeQuiz({
   answerLangName,
   locale,
   tagSuggestions,
+  scope,
   onResult,
 }: Props) {
   const t = useT();
 
   const [sessionTag, setSessionTag] = useState<string | null>(null);
+  const [count, setCount] = useState<number>(DEFAULT_QUIZ_PREFS.count);
+  const [skipLearned, setSkipLearned] = useState<boolean>(DEFAULT_QUIZ_PREFS.skipLearned);
   const [queue, setQueue] = useState<QuizItem[] | null>(null); // null = setup
   const [total, setTotal] = useState(0);
   const [score, setScore] = useState(0);
@@ -69,21 +69,52 @@ export function TypeQuiz({
   const [checked, setChecked] = useState(false);
   const [lastCorrect, setLastCorrect] = useState(false);
 
+  // Restore the last session's preferences for this scope (persisted in quiz.json,
+  // shared across devices via the same store).
+  useEffect(() => {
+    let alive = true;
+    loadQuizPrefs(scope).then((p) => {
+      if (!alive) return;
+      setSessionTag(p.tags[0] ?? null);
+      setCount(p.count);
+      setSkipLearned(p.skipLearned);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [scope]);
+
+  function persist(next: Partial<QuizPrefs>) {
+    const prefs: QuizPrefs = {
+      ...DEFAULT_QUIZ_PREFS,
+      tags: sessionTag ? [sessionTag] : [],
+      count,
+      skipLearned,
+      ...next,
+    };
+    void saveQuizPrefs(scope, prefs);
+  }
+
   const pool = useMemo(
     () =>
-      items.filter(
-        (it) => !sessionTag || it.tags.some((tag) => tag.toLowerCase() === sessionTag.toLowerCase())
-      ),
-    [items, sessionTag]
+      items.filter((it) => {
+        if (sessionTag && !it.tags.some((tag) => tag.toLowerCase() === sessionTag.toLowerCase()))
+          return false;
+        if (skipLearned && (it.known ?? 0) > 0) return false;
+        return true;
+      }),
+    [items, sessionTag, skipLearned]
   );
 
   function start() {
-    const q = shuffle(pool);
+    let q = shuffle(pool);
+    if (count > 0) q = q.slice(0, count);
     setQueue(q);
     setTotal(q.length);
     setScore(0);
     setInput('');
     setChecked(false);
+    persist({});
   }
 
   function reset() {
@@ -130,7 +161,39 @@ export function TypeQuiz({
     return (
       <div className="flex-col">
         <div className="train-hint">{t('quiz.whichItems')}</div>
-        <TagFilterRow tags={tagSuggestions} value={sessionTag} onChange={setSessionTag} />
+        <TagFilterRow
+          tags={tagSuggestions}
+          value={sessionTag}
+          onChange={(v) => {
+            setSessionTag(v);
+            persist({ tags: v ? [v] : [] });
+          }}
+        />
+        <div className="quiz-setup-row">
+          {QUIZ_COUNTS.map((c) => (
+            <button
+              key={c}
+              className={`filter-chip${count === c ? ' on' : ''}`}
+              onClick={() => {
+                setCount(c);
+                persist({ count: c });
+              }}
+            >
+              {c === 0 ? t('quiz.countAll') : c}
+            </button>
+          ))}
+        </div>
+        <label className="quiz-skip">
+          <input
+            type="checkbox"
+            checked={skipLearned}
+            onChange={(e) => {
+              setSkipLearned(e.target.checked);
+              persist({ skipLearned: e.target.checked });
+            }}
+          />
+          {t('quiz.skipLearned')}
+        </label>
         <div className="train-center">
           <div className="pool-count">{t('quiz.poolCount', { count: pool.length })}</div>
           <button className="big-btn" disabled={pool.length === 0} onClick={start}>

@@ -252,6 +252,33 @@ export default function App() {
     return item.id;
   }
 
+  // Bulk add (e.g. phrases read off a scanned image). Skips duplicates of the
+  // same target in the same language, like addVocab. New phrases start untagged.
+  function addPhrases(items: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known' | 'tags'>[]) {
+    setPhrases((prev) => {
+      const existing = new Set(prev.map((p) => `${p.lang}:${p.target.trim().toLowerCase()}`));
+      const fresh: PhraseItem[] = [];
+      for (const p of items) {
+        const key = `${p.lang}:${p.target.trim().toLowerCase()}`;
+        if (!p.target.trim() || existing.has(key)) continue;
+        existing.add(key);
+        fresh.push({
+          ...p,
+          tags: [],
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          createdAt: Date.now(),
+          reviews: 0,
+          known: 0,
+        });
+      }
+      if (fresh.length === 0) return prev;
+      notePairUsed();
+      const next = [...fresh, ...prev];
+      savePhrases(next);
+      return next;
+    });
+  }
+
   function updatePhrase(id: string, patch: Partial<PhraseItem>) {
     setPhrases((prev) => {
       const next = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
@@ -349,6 +376,7 @@ export default function App() {
             onUpdate={updateVocab}
             tagSuggestions={recentTags(vocab)}
             settings={settings}
+            onPurchasePro={purchasePro}
           />
         )}
         {tab === 'phrases' && (
@@ -356,8 +384,10 @@ export default function App() {
             phrases={phrases}
             onRemove={removePhrase}
             onUpdate={updatePhrase}
+            onAdd={addPhrases}
             tagSuggestions={recentTags(phrases)}
             settings={settings}
+            onPurchasePro={purchasePro}
           />
         )}
         {tab === 'settings' && (

@@ -10,6 +10,7 @@ const parla = {
   info: (): Promise<{
     version: string;
     dataDir: string;
+    icloud: boolean;
     platform: string;
     electron: string;
   }> => ipcRenderer.invoke('parla:info'),

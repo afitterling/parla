@@ -1,13 +1,29 @@
 import { useState } from 'react';
-import { Languages, Plus, X, BookOpen, Copy, Check, PencilLine } from 'lucide-react';
-import { Settings, VocabItem } from '../storage';
+import {
+  Languages,
+  Plus,
+  X,
+  BookOpen,
+  Copy,
+  Check,
+  PencilLine,
+  Sparkles,
+  RefreshCw,
+  Brush,
+} from 'lucide-react';
+import { Settings, VocabItem, recentTags } from '../storage';
 import { exportVocab } from '../export';
-import { findLanguage, speechLocale } from '../languages';
+import { generateVocabExample, transcribeAudio, translateVocabTerm } from '../api';
+import { findLanguage, speechLocale, usesHanzi, hasHanzi } from '../languages';
+import { useRecorder } from '../recorder';
 import { Row } from '../components/Row';
+import { MicButton } from '../components/MicButton';
 import { SpeakButton } from '../components/SpeakButton';
-import { TagBadges, TagModal } from '../components/TagModal';
+import { TagBadges } from '../components/TagModal';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { ExportMenu } from '../components/ExportMenu';
+import { WordCard } from '../components/WordCard';
+import { useTaggedList, ListControls, TagFilterRow } from '../components/TaggedList';
 import { useT } from '../i18n/I18nContext';
 import type { TFn } from '../i18n';
 
@@ -15,7 +31,7 @@ type Props = {
   vocab: VocabItem[];
   settings: Settings;
   onRemove: (id: string) => void;
-  onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) => void;
+  onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) => void;
   onUpdate: (id: string, patch: Partial<VocabItem>) => void;
   tagSuggestions: string[];
 };
@@ -24,16 +40,36 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const t = useT();
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
+  // Reading of the term, prefilled when the term came from auto-translate; it is
+  // cleared when the term is edited by hand (the reading belongs to the term).
+  const [termPinyin, setTermPinyin] = useState('');
   const [adding, setAdding] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [mode, setMode] = useState<'list' | 'quiz'>('list');
+  const recorder = useRecorder();
+  const [transcribing, setTranscribing] = useState(false);
+  const [micTarget, setMicTarget] = useState<'term' | 'translation'>('term');
+  const [translating, setTranslating] = useState(false);
+  // The word currently shown full-screen (WordCard); null = closed.
+  const [card, setCard] = useState<{ item: VocabItem; strokes: boolean } | null>(null);
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
 
   const goalLang = findLanguage(settings.goalLanguage);
+  const inputLang = findLanguage(settings.inputLanguage);
+  // Generate the reading whenever the goal language has one.
+  const wantPinyin = !!goalLang.romanize;
 
-  // Quiz over words that have a meaning to show as the prompt. For romanized
-  // goal languages (Chinese, Japanese …) the learner types the pinyin/romaji.
+  // Search + tag-filter + group-by-tag over the shown words (shared with Phrases).
+  const { search, setSearch, ordering, setOrdering, filterTags, setFilterTags, latest, sections } =
+    useTaggedList(
+      shown,
+      (v) => `${v.term} ${v.pinyin ?? ''} ${v.translation} ${v.tags.join(' ')}`.toLowerCase(),
+      t('phrase.untagged')
+    );
+
+  // Quiz over words that have a meaning to show as the prompt.
   const quizItems: QuizItem[] = shown
     .filter((v) => v.translation.trim())
     .map((v) => ({
@@ -43,23 +79,159 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
       pinyin: v.pinyin,
       tags: v.tags,
       lang: v.lang,
+      known: v.known,
     }));
+
+  // A word still needs enrichment if it lacks an example, a translation for that
+  // example, or — when the goal language is transliterated — the word's own
+  // pinyin or the example's pinyin. This is what "fill all missing" targets.
+  function needsEnrich(v: VocabItem): boolean {
+    if (!v.example || !v.exampleTranslation) return true;
+    if (wantPinyin && (!v.pinyin || !v.examplePinyin)) return true;
+    return false;
+  }
+
+  // Generate a natural example sentence (+ pinyin + translation) for one word and
+  // persist it, also filling the word's own pinyin if it was missing.
+  async function generateExample(item: VocabItem) {
+    const res = await generateVocabExample(
+      settings.openaiKey,
+      item.term,
+      goalLang,
+      inputLang,
+      wantPinyin
+    );
+    onUpdate(item.id, {
+      pinyin: item.pinyin || res.termPinyin,
+      example: res.example,
+      examplePinyin: res.examplePinyin,
+      exampleTranslation: res.exampleTranslation,
+    });
+  }
+
+  // Fill in example sentences for every shown word that still needs it.
+  async function generateAllMissing() {
+    const missing = shown.filter(needsEnrich);
+    if (missing.length === 0) return;
+    if (!window.confirm(t('vocab.genAllConfirm', { count: String(missing.length) }))) return;
+    setBulkBusy(true);
+    let failed = 0;
+    for (const item of missing) {
+      try {
+        await generateExample(item);
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    if (failed > 0) window.alert(t('vocab.genFailed', { count: String(failed) }));
+  }
+
+  // Speak instead of typing: click to record, click again to stop and transcribe
+  // with Whisper, then drop the text into the field. The term records in the goal
+  // language, the translation in the input language.
+  async function onMicPress(target: 'term' | 'translation') {
+    const active = recorder.state === 'recording' ? micTarget : target;
+    if (recorder.state === 'recording') {
+      try {
+        setTranscribing(true);
+        const blob = await recorder.stop();
+        if (blob) {
+          const lang = micTarget === 'term' ? goalLang : inputLang;
+          const text = await transcribeAudio(blob, settings.openaiKey, lang);
+          // Whisper punctuates like a sentence — strip that for a vocab entry.
+          const cleaned = text.replace(/[。．.．!！?？,，、;；]+$/gu, '').trim();
+          if (!cleaned) window.alert(t('dialog.errorNoSpeech'));
+          else if (micTarget === 'term') {
+            setTerm(cleaned);
+            setTermPinyin('');
+          } else setTranslation(cleaned);
+        }
+      } catch (e: any) {
+        window.alert(e?.message ?? String(e));
+      } finally {
+        setTranscribing(false);
+      }
+    } else {
+      try {
+        setMicTarget(target);
+        await recorder.start();
+      } catch (e: any) {
+        window.alert(e?.message ?? t('dialog.errorRecording'));
+      }
+    }
+    void active;
+  }
+
+  // Fill the empty half of the pair from the filled one. Direction is inferred.
+  async function onTranslatePress() {
+    if (translating) return;
+    const haveTerm = !!term.trim();
+    const haveTranslation = !!translation.trim();
+    if (haveTerm === haveTranslation) return;
+    setTranslating(true);
+    try {
+      if (haveTerm) {
+        const res = await translateVocabTerm(settings.openaiKey, term.trim(), goalLang, inputLang, false);
+        setTranslation(res.text);
+      } else {
+        const res = await translateVocabTerm(
+          settings.openaiKey,
+          translation.trim(),
+          inputLang,
+          goalLang,
+          wantPinyin
+        );
+        setTerm(res.text);
+        setTermPinyin(res.reading ?? '');
+      }
+    } catch (e: any) {
+      window.alert(e?.message ?? String(e));
+    } finally {
+      setTranslating(false);
+    }
+  }
 
   function submit() {
     if (!term.trim()) return;
-    onAdd([{ term: term.trim(), translation: translation.trim(), lang: settings.goalLanguage }]);
+    onAdd([
+      {
+        term: term.trim(),
+        translation: translation.trim(),
+        pinyin: termPinyin.trim() || undefined,
+        lang: settings.goalLanguage,
+      },
+    ]);
     setTerm('');
     setTranslation('');
+    setTermPinyin('');
     setAdding(false);
   }
 
+  const oneSideFilled = !!term.trim() !== !!translation.trim();
+
   return (
     <div className="screen">
+      {card && (
+        <WordCard
+          item={card.item}
+          suggestions={tagSuggestions}
+          openaiKey={settings.openaiKey}
+          initialStrokes={card.strokes}
+          onChange={(tags) => onUpdate(card.item.id, { tags })}
+          onFillPinyin={(pinyin) => {
+            onUpdate(card.item.id, { pinyin });
+            setCard((c) => (c ? { ...c, item: { ...c.item, pinyin } } : c));
+          }}
+          onClose={() => setCard(null)}
+        />
+      )}
+
       <div className="list-head">
         <div className="head-left">
           <span className="lang-badge">
             <Languages size={14} />
-            {findLanguage(settings.goalLanguage).nativeName}
+            {goalLang.nativeName}
           </span>
           <span className="count">
             {shown.length} {shown.length === 1 ? t('vocab.one') : t('vocab.many')}
@@ -67,6 +239,17 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
         </div>
         {mode === 'list' && (
           <div className="head-right">
+            {shown.some(needsEnrich) && (
+              <button
+                className="icon-soft"
+                onClick={generateAllMissing}
+                disabled={bulkBusy}
+                title={t('vocab.genExample')}
+                aria-label={t('vocab.genExample')}
+              >
+                {bulkBusy ? <span className="spinner" /> : <Sparkles size={17} />}
+              </button>
+            )}
             {shown.length > 0 && (
               <ExportMenu onPick={(f) => exportVocab(shown, settings.goalLanguage, f)} />
             )}
@@ -105,54 +288,130 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           answerLangName={goalLang.nativeName}
           locale={speechLocale(goalLang)}
           tagSuggestions={tagSuggestions}
+          scope="vocab"
+          onResult={(id, correct) => {
+            const v = shown.find((x) => x.id === id);
+            if (!v) return;
+            onUpdate(id, { reviews: (v.reviews ?? 0) + 1, known: (v.known ?? 0) + (correct ? 1 : 0) });
+          }}
         />
       ) : (
         <>
-      {adding && (
-        <div className="add-card">
-          <input
-            className="field"
-            autoFocus
-            placeholder={t('vocab.wordPlaceholder', {
-              lang: findLanguage(settings.goalLanguage).nativeName,
-            })}
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-          />
-          <input
-            className="field"
-            placeholder={t('vocab.translationPlaceholder', {
-              lang: findLanguage(settings.inputLanguage).nativeName,
-            })}
-            value={translation}
-            onChange={(e) => setTranslation(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-          />
-          <button className="save-btn cyan" onClick={submit}>
-            {t('common.save')}
-          </button>
-        </div>
-      )}
+          {adding && (
+            <div className="add-card">
+              <div className="add-input-row">
+                <input
+                  className="field"
+                  autoFocus
+                  placeholder={t('vocab.wordPlaceholder', { lang: goalLang.nativeName })}
+                  value={term}
+                  onChange={(e) => {
+                    setTerm(e.target.value);
+                    setTermPinyin('');
+                  }}
+                />
+                <MicButton
+                  recording={recorder.state === 'recording' && micTarget === 'term'}
+                  busy={transcribing && micTarget === 'term'}
+                  onClick={() => onMicPress('term')}
+                  label={t('vocab.speakWord')}
+                />
+              </div>
+              {!!termPinyin && <div className="add-pinyin">{termPinyin}</div>}
+              <div className="add-input-row">
+                <input
+                  className="field"
+                  placeholder={t('vocab.translationPlaceholder', { lang: inputLang.nativeName })}
+                  value={translation}
+                  onChange={(e) => setTranslation(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && submit()}
+                />
+                <MicButton
+                  recording={recorder.state === 'recording' && micTarget === 'translation'}
+                  busy={transcribing && micTarget === 'translation'}
+                  onClick={() => onMicPress('translation')}
+                  label={t('vocab.speakTranslation')}
+                />
+              </div>
+              {oneSideFilled && (
+                <button className="translate-btn" onClick={onTranslatePress} disabled={translating}>
+                  {translating ? <span className="spinner" /> : <Sparkles size={16} />}
+                  {t('vocab.translate')}
+                </button>
+              )}
+              <button className="save-btn cyan" onClick={submit}>
+                {t('common.save')}
+              </button>
+            </div>
+          )}
 
-      {shown.length === 0 ? (
-        <div className="empty">
-          <BookOpen size={52} className="faint" />
-          <p>{t('vocab.emptyText', { lang: findLanguage(settings.goalLanguage).nativeName })}</p>
-        </div>
-      ) : (
-        <div className="list">
-          {shown.map((item) => (
-            <VocabRow
-              key={item.id}
-              item={item}
-              onRemove={onRemove}
-              onUpdate={onUpdate}
-              tagSuggestions={tagSuggestions}
-              t={t}
-            />
-          ))}
-        </div>
-      )}
+          {shown.length === 0 ? (
+            <div className="empty">
+              <BookOpen size={52} className="faint" />
+              <p>{t('vocab.emptyText', { lang: goalLang.nativeName })}</p>
+            </div>
+          ) : (
+            <>
+              <ListControls
+                search={search}
+                onSearch={setSearch}
+                ordering={ordering}
+                onOrdering={setOrdering}
+                placeholder={t('vocab.searchPlaceholder')}
+                latestLabel={t('phrase.latest')}
+                byTagLabel={t('phrase.byTag')}
+              />
+              <TagFilterRow
+                tags={recentTags(shown)}
+                value={filterTags}
+                onChange={setFilterTags}
+                allLabel={t('common.all')}
+              />
+
+              {ordering === 'latest' ? (
+                <div className="list">
+                  {latest.length === 0 ? (
+                    <p className="no-match">{t('phrase.noMatch')}</p>
+                  ) : (
+                    latest.map((item) => (
+                      <VocabRow
+                        key={item.id}
+                        item={item}
+                        onRemove={onRemove}
+                        onGenerate={generateExample}
+                        onOpen={(strokes) => setCard({ item, strokes })}
+                        t={t}
+                      />
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="list">
+                  {sections.length === 0 ? (
+                    <p className="no-match">{t('phrase.noMatch')}</p>
+                  ) : (
+                    sections.map((sec) => (
+                      <div key={sec.title}>
+                        <div className="section-header">
+                          {sec.title} · {sec.data.length}
+                        </div>
+                        {sec.data.map((item) => (
+                          <VocabRow
+                            key={item.id}
+                            item={item}
+                            onRemove={onRemove}
+                            onGenerate={generateExample}
+                            onOpen={(strokes) => setCard({ item, strokes })}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
     </div>
@@ -162,19 +421,20 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
 function VocabRow({
   item,
   onRemove,
-  onUpdate,
-  tagSuggestions,
+  onGenerate,
+  onOpen,
   t,
 }: {
   item: VocabItem;
   onRemove: (id: string) => void;
-  onUpdate: (id: string, patch: Partial<VocabItem>) => void;
-  tagSuggestions: string[];
+  onGenerate: (item: VocabItem) => Promise<void>;
+  onOpen: (strokes: boolean) => void;
   t: TFn;
 }) {
   const locale = speechLocale(findLanguage(item.lang));
-  const [tagModalOpen, setTagModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const canStrokes = usesHanzi(item.lang) && hasHanzi(item.term);
 
   async function copy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -185,12 +445,21 @@ function VocabRow({
     setTimeout(() => setCopied(false), 1200);
   }
 
+  async function generate(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (generating) return;
+    setGenerating(true);
+    try {
+      await onGenerate(item);
+    } catch (err: any) {
+      window.alert(err?.message ?? String(err));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
-    <Row
-      onDelete={() => onRemove(item.id)}
-      onTap={() => setTagModalOpen(true)}
-      deleteLabel={t('swipe.delete')}
-    >
+    <Row onDelete={() => onRemove(item.id)} onTap={() => onOpen(false)} deleteLabel={t('swipe.delete')}>
       <div className="vocab-inner">
         <div className="vocab-main">
           <div className="term">{item.term}</div>
@@ -207,6 +476,28 @@ function VocabRow({
           )}
           <TagBadges tags={item.tags} />
         </div>
+        {canStrokes && (
+          <button
+            className="icon-outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(true);
+            }}
+            aria-label={t('vocab.strokes')}
+            title={t('vocab.strokes')}
+          >
+            <Brush size={17} />
+          </button>
+        )}
+        <button
+          className="icon-soft"
+          onClick={generate}
+          disabled={generating}
+          aria-label={t('vocab.genExample')}
+          title={t('vocab.genExample')}
+        >
+          {generating ? <span className="spinner" /> : item.example ? <RefreshCw size={17} /> : <Sparkles size={17} />}
+        </button>
         <button
           className={`icon-soft${copied ? ' ok' : ''}`}
           onClick={copy}
@@ -222,17 +513,6 @@ function VocabRow({
           />
         </span>
       </div>
-
-      <TagModal
-        visible={tagModalOpen}
-        title={t('tagModal.title')}
-        subtitle={item.term}
-        addLabel={t('vocab.tag')}
-        tags={item.tags}
-        suggestions={tagSuggestions}
-        onChange={(tags) => onUpdate(item.id, { tags })}
-        onClose={() => setTagModalOpen(false)}
-      />
     </Row>
   );
 }

@@ -1,0 +1,3 @@
+# app-ads.txt (IAB Tech Lab) - no authorized digital sellers.
+# This app sells no programmatic advertising inventory, so the record list is
+# intentionally empty. The file exists so crawlers stop probing for it.

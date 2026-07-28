@@ -7,16 +7,37 @@ import {
   RefreshCw,
   Check,
   X,
+  Plus,
+  Sparkles,
+  ArrowRight,
+  CheckCircle2,
+  XCircle,
   PencilLine,
 } from 'lucide-react';
-import { PhraseItem, Settings, recentTags } from '../storage';
+import {
+  AnswerMode,
+  PhraseItem,
+  Settings,
+  loadQuizPrefs,
+  recentTags,
+  saveQuizPrefs,
+} from '../storage';
+import { answerMatches } from '../answers';
+import { transcribeAudio, translatePhrase } from '../api';
 import { exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
+import { useRecorder } from '../recorder';
 import { Row } from '../components/Row';
+import { MicButton } from '../components/MicButton';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { ExportMenu } from '../components/ExportMenu';
+import {
+  useTaggedList,
+  ListControls,
+  TagFilterRow as SharedTagFilterRow,
+} from '../components/TaggedList';
 import { useT } from '../i18n/I18nContext';
 
 type Props = {
@@ -24,15 +45,17 @@ type Props = {
   settings: Settings;
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<PhraseItem>) => void;
+  onAdd: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
   tagSuggestions: string[];
 };
 
 type View2 = 'list' | 'train' | 'quiz';
 
-export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
+export function PhraseScreen({ phrases, onRemove, onUpdate, onAdd, settings }: Props) {
   const t = useT();
   const [view, setView] = useState<View2>('list');
   const [learnPhrase, setLearnPhrase] = useState<PhraseItem | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // Only phrases in the currently selected goal language.
   const shown = phrases.filter((p) => p.lang === settings.goalLanguage);
@@ -53,11 +76,17 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
         <span className="count">
           {shown.length} {shown.length === 1 ? t('phrase.one') : t('phrase.many')}
         </span>
-        {shown.length > 0 && (
-          <span className="push-right">
+        <span className="head-right">
+          {shown.length > 0 && (
             <ExportMenu onPick={(f) => exportPhrases(shown, settings.goalLanguage, f)} />
-          </span>
-        )}
+          )}
+          {view === 'list' && (
+            <button className="add-toggle" onClick={() => setAdding((v) => !v)}>
+              {adding ? <X size={15} /> : <Plus size={15} />}
+              {adding ? t('common.cancel') : t('phrase.ask')}
+            </button>
+          )}
+        </span>
       </div>
 
       <div className="segment sub">
@@ -72,6 +101,7 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
           className={`seg-btn${view === 'train' ? ' active' : ''}`}
           onClick={() => {
             setLearnPhrase(null);
+            setAdding(false);
             setView('train');
           }}
         >
@@ -82,6 +112,7 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
           className={`seg-btn${view === 'quiz' ? ' active' : ''}`}
           onClick={() => {
             setLearnPhrase(null);
+            setAdding(false);
             setView('quiz');
           }}
         >
@@ -90,6 +121,13 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
         </button>
       </div>
 
+      {view === 'list' && adding && (
+        <PhraseAdd
+          settings={settings}
+          onAdd={onAdd}
+          onDone={() => setAdding(false)}
+        />
+      )}
       {view === 'list' && (
         <ListView
           phrases={shown}
@@ -111,6 +149,170 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, settings }: Props) {
       {view === 'quiz' && (
         <QuizView phrases={shown} onUpdate={onUpdate} tagSuggestions={tags} settings={settings} />
       )}
+    </div>
+  );
+}
+
+// ── "How would I say …" ──────────────────────────────────────────────────────
+// Type (or speak) what you want to say in your own language, let it be turned
+// into the phrase a native speaker would use, then save it like any other
+// phrase. Works in both directions: fill either field and translate the other.
+function PhraseAdd({
+  settings,
+  onAdd,
+  onDone,
+}: {
+  settings: Settings;
+  onAdd: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
+  onDone: () => void;
+}) {
+  const t = useT();
+  const [ask, setAsk] = useState(''); // what the learner wants to say (input language)
+  const [target, setTarget] = useState(''); // the phrase in the goal language
+  // Reading of the target, prefilled by the translation; cleared when the
+  // target is edited by hand (the reading belongs to that exact wording).
+  const [reading, setReading] = useState('');
+  const [translating, setTranslating] = useState(false);
+  const recorder = useRecorder();
+  const [transcribing, setTranscribing] = useState(false);
+  const [micTarget, setMicTarget] = useState<'ask' | 'target'>('ask');
+
+  const goalLang = findLanguage(settings.goalLanguage);
+  const inputLang = findLanguage(settings.inputLanguage);
+  const wantReading = !!goalLang.romanize;
+
+  // Speak instead of typing: click to record, click again to stop and
+  // transcribe. The ask field records in the learner's language, the target
+  // field in the goal language.
+  async function onMicPress(field: 'ask' | 'target') {
+    if (recorder.state === 'recording') {
+      try {
+        setTranscribing(true);
+        const blob = await recorder.stop();
+        if (blob) {
+          const lang = micTarget === 'ask' ? inputLang : goalLang;
+          const text = (await transcribeAudio(blob, settings.openaiKey, lang)).trim();
+          if (!text) window.alert(t('dialog.errorNoSpeech'));
+          else if (micTarget === 'ask') setAsk(text);
+          else {
+            setTarget(text);
+            setReading('');
+          }
+        }
+      } catch (e: any) {
+        window.alert(e?.message ?? String(e));
+      } finally {
+        setTranscribing(false);
+      }
+    } else {
+      try {
+        setMicTarget(field);
+        await recorder.start();
+      } catch (e: any) {
+        window.alert(e?.message ?? t('dialog.errorRecording'));
+      }
+    }
+  }
+
+  // Fill the empty side from the filled one — the "how would I say" direction
+  // is the common one, the reverse turns an overheard phrase into an entry.
+  async function translate() {
+    if (translating) return;
+    const haveAsk = !!ask.trim();
+    const haveTarget = !!target.trim();
+    if (haveAsk === haveTarget) return;
+    setTranslating(true);
+    try {
+      if (haveAsk) {
+        const res = await translatePhrase(
+          settings.openaiKey,
+          ask.trim(),
+          inputLang,
+          goalLang,
+          wantReading
+        );
+        setTarget(res.text);
+        setReading(res.reading ?? '');
+      } else {
+        const res = await translatePhrase(
+          settings.openaiKey,
+          target.trim(),
+          goalLang,
+          inputLang,
+          false
+        );
+        setAsk(res.text);
+      }
+    } catch (e: any) {
+      window.alert(e?.message ?? String(e));
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  function submit() {
+    if (!target.trim()) return;
+    onAdd({
+      target: target.trim(),
+      translation: ask.trim(),
+      pinyin: reading.trim() || undefined,
+      lang: settings.goalLanguage,
+      tags: [],
+    });
+    setAsk('');
+    setTarget('');
+    setReading('');
+    onDone();
+  }
+
+  const oneSideFilled = !!ask.trim() !== !!target.trim();
+
+  return (
+    <div className="add-card">
+      <div className="add-input-row">
+        <input
+          className="field"
+          autoFocus
+          placeholder={t('phrase.askPlaceholder', { lang: inputLang.nativeName })}
+          value={ask}
+          onChange={(e) => setAsk(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && (oneSideFilled ? translate() : submit())}
+        />
+        <MicButton
+          recording={recorder.state === 'recording' && micTarget === 'ask'}
+          busy={transcribing && micTarget === 'ask'}
+          onClick={() => onMicPress('ask')}
+          label={t('phrase.speakAsk')}
+        />
+      </div>
+      <div className="add-input-row">
+        <input
+          className="field"
+          placeholder={t('phrase.targetPlaceholder', { lang: goalLang.nativeName })}
+          value={target}
+          onChange={(e) => {
+            setTarget(e.target.value);
+            setReading('');
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+        />
+        <MicButton
+          recording={recorder.state === 'recording' && micTarget === 'target'}
+          busy={transcribing && micTarget === 'target'}
+          onClick={() => onMicPress('target')}
+          label={t('phrase.speakTarget')}
+        />
+      </div>
+      {!!reading && <div className="add-pinyin">{reading}</div>}
+      {oneSideFilled && (
+        <button className="translate-btn" onClick={translate} disabled={translating}>
+          {translating ? <span className="spinner" /> : <Sparkles size={16} />}
+          {t('vocab.translate')}
+        </button>
+      )}
+      <button className="save-btn cyan" onClick={submit} disabled={!target.trim()}>
+        {t('common.save')}
+      </button>
     </div>
   );
 }
@@ -137,6 +339,7 @@ function QuizView({
       pinyin: p.pinyin,
       tags: p.tags,
       lang: p.lang,
+      known: p.known,
     }));
 
   return (
@@ -146,6 +349,7 @@ function QuizView({
       answerLangName={goalLang.nativeName}
       locale={speechLocale(goalLang)}
       tagSuggestions={tagSuggestions}
+      scope="phrases"
       onResult={(id, correct) => {
         const p = phrases.find((x) => x.id === id);
         if (!p) return;
@@ -170,46 +374,12 @@ function ListView({
   onLearn: (item: PhraseItem) => void;
 }) {
   const t = useT();
-  const [search, setSearch] = useState('');
-  const [ordering, setOrdering] = useState<'latest' | 'tag'>('latest');
-  const [filterTag, setFilterTag] = useState<string | null>(null);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return phrases.filter((p) => {
-      const matchSearch =
-        !q ||
-        p.target.toLowerCase().includes(q) ||
-        p.translation.toLowerCase().includes(q) ||
-        p.tags.some((tg) => tg.toLowerCase().includes(q));
-      const matchTag =
-        !filterTag || p.tags.some((tg) => tg.toLowerCase() === filterTag.toLowerCase());
-      return matchSearch && matchTag;
-    });
-  }, [phrases, search, filterTag]);
-
-  const latest = useMemo(() => [...filtered].sort((a, b) => b.createdAt - a.createdAt), [filtered]);
-
-  const sections = useMemo(() => {
-    const tagSet = new Set<string>();
-    filtered.forEach((p) => p.tags.forEach((tg) => tagSet.add(tg)));
-    let tagList = [...tagSet].sort((a, b) => a.localeCompare(b));
-    if (filterTag) tagList = tagList.filter((tg) => tg.toLowerCase() === filterTag.toLowerCase());
-    const secs = tagList.map((tag) => ({
-      title: tag,
-      data: filtered
-        .filter((p) => p.tags.some((tg) => tg.toLowerCase() === tag.toLowerCase()))
-        .sort((a, b) => b.createdAt - a.createdAt),
-    }));
-    if (!filterTag) {
-      const untagged = filtered
-        .filter((p) => p.tags.length === 0)
-        .sort((a, b) => b.createdAt - a.createdAt);
-      if (untagged.length) secs.push({ title: t('phrase.untagged'), data: untagged });
-    }
-    return secs;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, filterTag]);
+  const { search, setSearch, ordering, setOrdering, filterTags, setFilterTags, latest, sections } =
+    useTaggedList(
+      phrases,
+      (p) => `${p.target} ${p.pinyin ?? ''} ${p.translation} ${p.tags.join(' ')}`.toLowerCase(),
+      t('phrase.untagged')
+    );
 
   if (phrases.length === 0) {
     return (
@@ -233,30 +403,21 @@ function ListView({
 
   return (
     <div className="flex-col">
-      <div className="controls">
-        <input
-          className="search"
-          placeholder={t('phrase.searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div className="order-toggle">
-          <button
-            className={`order-btn${ordering === 'latest' ? ' active' : ''}`}
-            onClick={() => setOrdering('latest')}
-          >
-            {t('phrase.latest')}
-          </button>
-          <button
-            className={`order-btn${ordering === 'tag' ? ' active' : ''}`}
-            onClick={() => setOrdering('tag')}
-          >
-            {t('phrase.byTag')}
-          </button>
-        </div>
-      </div>
-
-      <TagFilterRow tags={tagSuggestions} value={filterTag} onChange={setFilterTag} />
+      <ListControls
+        search={search}
+        onSearch={setSearch}
+        ordering={ordering}
+        onOrdering={setOrdering}
+        placeholder={t('phrase.searchPlaceholder')}
+        latestLabel={t('phrase.latest')}
+        byTagLabel={t('phrase.byTag')}
+      />
+      <SharedTagFilterRow
+        tags={recentTags(phrases)}
+        value={filterTags}
+        onChange={setFilterTags}
+        allLabel={t('common.all')}
+      />
 
       <div className="list">
         {ordering === 'latest' ? (
@@ -354,6 +515,26 @@ function TrainView({
   const [queue, setQueue] = useState<string[] | null>(null); // ids; null = not started
   const [total, setTotal] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  // Recall mode: type the answer instead of just flipping the card. Remembered
+  // across sessions like the quiz's selection.
+  const [answerMode, setAnswerMode] = useState<AnswerMode>('reveal');
+  const [input, setInput] = useState('');
+  const [lastCorrect, setLastCorrect] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    loadQuizPrefs('train').then((p) => {
+      if (alive) setAnswerMode(p.answerMode);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function chooseAnswerMode(mode: AnswerMode) {
+    setAnswerMode(mode);
+    saveQuizPrefs('train', { ...(await loadQuizPrefs('train')), answerMode: mode });
+  }
 
   const pool = useMemo(
     () =>
@@ -385,6 +566,7 @@ function TrainView({
       setQueue([learnPhrase.id]);
       setTotal(1);
       setRevealed(false);
+      setInput('');
       return;
     }
     const ids = pool.map((p) => p.id);
@@ -396,11 +578,13 @@ function TrainView({
     setQueue(ids);
     setTotal(ids.length);
     setRevealed(false);
+    setInput('');
   }
 
   function reset() {
     setQueue(null);
     setRevealed(false);
+    setInput('');
     onClearLearn();
   }
 
@@ -421,6 +605,22 @@ function TrainView({
             onClick={() => setDirection('t2de')}
           >
             {t('train.t2de')}
+          </button>
+        </div>
+
+        <div className="train-hint">{t('train.answerMode')}</div>
+        <div className="order-toggle inset">
+          <button
+            className={`order-btn${answerMode === 'reveal' ? ' active' : ''}`}
+            onClick={() => chooseAnswerMode('reveal')}
+          >
+            {t('train.modeReveal')}
+          </button>
+          <button
+            className={`order-btn${answerMode === 'type' ? ' active' : ''}`}
+            onClick={() => chooseAnswerMode('type')}
+          >
+            {t('train.modeType')}
           </button>
         </div>
 
@@ -470,16 +670,32 @@ function TrainView({
   const backText = back || t('train.noTranslation');
   const done = total - queue.length;
 
+  // Typing mode: what counts as the right answer for the current direction.
+  // Answering a Chinese/Japanese card in romanization is accepted too, so no
+  // Chinese keyboard is needed.
+  const typing = answerMode === 'type';
+  const cardLang = findLanguage(current.lang);
+  const typeTarget = direction === 'de2t'; // typing the goal language, not the meaning
+  const accepted = typeTarget ? [current.target, current.pinyin] : [current.translation];
+
   function known() {
     onUpdate(current!.id, { reviews: current!.reviews + 1, known: current!.known + 1 });
     setQueue((q) => (q ? q.slice(1) : q));
     setRevealed(false);
+    setInput('');
   }
 
   function again() {
     onUpdate(current!.id, { reviews: current!.reviews + 1 });
     setQueue((q) => (q ? [...q.slice(1), q[0]] : q));
     setRevealed(false);
+    setInput('');
+  }
+
+  function check() {
+    if (revealed || !input.trim()) return;
+    setLastCorrect(answerMatches(input, accepted));
+    setRevealed(true);
   }
 
   return (
@@ -494,14 +710,59 @@ function TrainView({
         </button>
       </div>
 
-      <div className="flashcard" onClick={() => !revealed && setRevealed(true)}>
+      <div className="flashcard" onClick={() => !revealed && !typing && setRevealed(true)}>
         <div className="side">
           {direction === 'de2t' ? t('train.native') : t('train.targetLang')}
         </div>
         <div className="front">{frontText}</div>
         {direction === 't2de' && !!current.pinyin && <div className="cpinyin">{current.pinyin}</div>}
+
+        {typing && (
+          <>
+            <div className="quiz-hint">
+              {!typeTarget
+                ? t('train.typeMeaning')
+                : cardLang.romanize
+                  ? t('quiz.typePinyin')
+                  : t('quiz.typeAnswer', { lang: cardLang.nativeName })}
+            </div>
+            <div className="type-row">
+              <input
+                // Remount per card so autoFocus fires again on the next one.
+                key={current.id}
+                className={`quiz-input${revealed ? (lastCorrect ? ' correct' : ' wrong') : ''}`}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && check()}
+                disabled={revealed}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={typeTarget && cardLang.romanize ? 'pinyin …' : '…'}
+              />
+              {!revealed && (
+                <button
+                  className="type-submit"
+                  disabled={!input.trim()}
+                  onClick={check}
+                  aria-label={t('quiz.check')}
+                  title={t('quiz.check')}
+                >
+                  <ArrowRight size={20} />
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
         {revealed ? (
           <>
+            {typing && (
+              <div className={`quiz-verdict${lastCorrect ? ' ok' : ' bad'}`}>
+                {lastCorrect ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                {lastCorrect ? t('quiz.correct') : t('quiz.wrong')}
+              </div>
+            )}
             <div className="divider" />
             <div className="back">{backText}</div>
             {direction === 'de2t' && !!current.pinyin && (
@@ -510,7 +771,7 @@ function TrainView({
             <TagBadges tags={current.tags} />
           </>
         ) : (
-          <div className="hint">{t('train.tapToReveal')}</div>
+          !typing && <div className="hint">{t('train.tapToReveal')}</div>
         )}
       </div>
 
@@ -526,9 +787,11 @@ function TrainView({
           </button>
         </div>
       ) : (
-        <button className="reveal-btn" onClick={() => setRevealed(true)}>
-          {t('train.reveal')}
-        </button>
+        !typing && (
+          <button className="reveal-btn" onClick={() => setRevealed(true)}>
+            {t('train.reveal')}
+          </button>
+        )
       )}
     </div>
   );

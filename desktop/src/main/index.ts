@@ -11,38 +11,63 @@ import { promises as fs } from 'fs';
 // per-user data directory.
 const MOBILE_DOCS = join(homedir(), 'Library', 'Mobile Documents');
 
-// The shared container the iOS app owns (bundle id com.afitterling.sprachapp →
-// container iCloud.com.afitterling.sprachapp → this on-disk folder name).
-const CONTAINER_DIR = join(MOBILE_DOCS, 'iCloud~com~afitterling~sprachapp', 'Documents');
+// Which iOS app's iCloud "Documents" container we share. Must match the
+// `com.apple.developer.ubiquity-container-identifiers` entitlement of the iOS
+// build you want to sync with (NOT merely its bundle id — the container id is a
+// separate value, though it conventionally mirrors the bundle id as
+// `iCloud.<bundleid>`). Override per build via the `MAIN_VITE_ICLOUD_CONTAINER`
+// env var (see desktop/.env); defaults to the production container.
+//
+// NOTE: the Electron app only reads/writes the on-disk container FOLDER — it
+// cannot itself register a syncing iCloud container. The folder only exists and
+// syncs to your phone once a real iCloud-entitled app (the iOS build with this
+// exact container id) has created it and iCloud Drive is on for the same Apple
+// ID. Pointing here at a container no iOS build owns gives a local-only folder.
+const CONTAINER_ID = (
+  (import.meta as any).env?.MAIN_VITE_ICLOUD_CONTAINER || 'iCloud.com.afitterling.sprachapp'
+)
+  .toString()
+  .trim();
 
-// Where older desktop builds stored data (top-level iCloud Drive). Migrated once.
-const LEGACY_DIR = join(MOBILE_DOCS, 'com~apple~CloudDocs', 'Parla');
+// Container id → on-disk folder name (dots become tildes):
+// `iCloud.tech.sp33c.parla.dev` → `iCloud~tech~sp33c~parla~dev`.
+const CONTAINER_DIR = join(MOBILE_DOCS, CONTAINER_ID.replace(/\./g, '~'), 'Documents');
 
-const DATA_FILES = ['vocab.json', 'phrases.json', 'settings.json', 'usage.json'];
+// Prior data locations, migrated once (non-clobbering) into the active container
+// so switching container ids — or upgrading from an old desktop build — keeps
+// your words/phrases. Order = lowest priority first.
+const MIGRATION_SOURCES = [
+  join(MOBILE_DOCS, 'com~apple~CloudDocs', 'Parla'), // very old top-level iCloud Drive folder
+  join(MOBILE_DOCS, 'iCloud~com~afitterling~sprachapp', 'Documents'), // production container
+];
+
+const DATA_FILES = ['vocab.json', 'phrases.json', 'settings.json', 'usage.json', 'quiz.json'];
 
 let dataDirPromise: Promise<string> | null = null;
 
-// One-time copy of any legacy files into the shared container, without clobbering
-// files already there (the container copy wins).
-async function migrateLegacy(target: string): Promise<void> {
-  try {
-    await fs.access(LEGACY_DIR);
-  } catch {
-    return; // nothing to migrate
-  }
-  for (const name of DATA_FILES) {
-    const from = join(LEGACY_DIR, name);
-    const to = join(target, name);
+// One-time copy of any prior-location files into the active container, without
+// clobbering files already there (the active container copy wins).
+async function migrateInto(target: string): Promise<void> {
+  for (const source of MIGRATION_SOURCES) {
+    if (source === target) continue; // don't copy a container onto itself
     try {
-      await fs.access(to);
-      continue; // already present in the container — don't overwrite
+      await fs.access(source);
     } catch {
-      // not present yet → copy if the legacy file exists
+      continue; // this source doesn't exist
     }
-    try {
-      await fs.copyFile(from, to);
-    } catch {
-      // legacy file missing → skip
+    for (const name of DATA_FILES) {
+      const to = join(target, name);
+      try {
+        await fs.access(to);
+        continue; // already present in the active container — don't overwrite
+      } catch {
+        // not present yet → copy if the source file exists
+      }
+      try {
+        await fs.copyFile(join(source, name), to);
+      } catch {
+        // source file missing → skip
+      }
     }
   }
 }
@@ -52,7 +77,7 @@ async function resolveDataDir(): Promise<string> {
   try {
     await fs.access(MOBILE_DOCS);
     await fs.mkdir(CONTAINER_DIR, { recursive: true });
-    await migrateLegacy(CONTAINER_DIR);
+    await migrateInto(CONTAINER_DIR);
     return CONTAINER_DIR;
   } catch {
     const fallback = join(app.getPath('userData'), 'Parla');
@@ -93,12 +118,18 @@ function registerStorageIpc(): void {
     await fs.rename(tmp, file);
   });
 
-  ipcMain.handle('parla:info', async () => ({
-    version: app.getVersion(),
-    dataDir: await dataDir(),
-    platform: `${process.platform} ${process.getSystemVersion?.() ?? ''}`.trim(),
-    electron: process.versions.electron,
-  }));
+  ipcMain.handle('parla:info', async () => {
+    const dir = await dataDir();
+    return {
+      version: app.getVersion(),
+      dataDir: dir,
+      // True when data lives in the shared iCloud container (cross-device sync
+      // active), false when we fell back to the local userData directory.
+      icloud: dir === CONTAINER_DIR,
+      platform: `${process.platform} ${process.getSystemVersion?.() ?? ''}`.trim(),
+      electron: process.versions.electron,
+    };
+  });
 }
 
 function createWindow(): void {
@@ -138,10 +169,11 @@ function createWindow(): void {
 app.whenReady().then(() => {
   registerStorageIpc();
 
-  // Grant microphone access to the renderer (needed for MediaRecorder).
-  const micPermissions = ['media', 'audioCapture'];
+  // Grant microphone access (MediaRecorder) and geolocation (Emergency mode) to
+  // the renderer.
+  const allowedPermissions = ['media', 'audioCapture', 'geolocation'];
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(micPermissions.includes(permission));
+    callback(allowedPermissions.includes(permission));
   });
 
   createWindow();

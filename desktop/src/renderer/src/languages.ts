@@ -146,3 +146,19 @@ export const DEFAULT_LANGUAGE = LANGUAGES.find((l) => l.code === 'zh') ?? LANGUA
 export function findLanguage(code: string): Language {
   return LANGUAGES.find((l) => l.code === code) ?? DEFAULT_LANGUAGE;
 }
+
+// Languages written with Han characters — the only ones where stroke-order
+// practice makes sense (Japanese for its kanji; Korean hangul is excluded).
+const HANZI_LANGS = new Set(['zh', 'zh-TW', 'yue', 'ja']);
+
+export function usesHanzi(code: string): boolean {
+  return HANZI_LANGS.has(code);
+}
+
+// Han characters: CJK Unified Ideographs + Extension A + Compatibility Ideographs
+// — the coverage of hanzi-writer's stroke data.
+const HAN = /[㐀-䶿一-鿿豈-﫿]/;
+
+export function hasHanzi(text: string): boolean {
+  return HAN.test(text);
+}

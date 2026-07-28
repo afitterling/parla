@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MessagesSquare, BookOpen, Bookmark, Settings as SettingsIcon } from 'lucide-react';
+import {
+  MessagesSquare,
+  BookOpen,
+  Bookmark,
+  Settings as SettingsIcon,
+  AlertTriangle,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
   loadPhrases,
@@ -13,11 +19,16 @@ import {
   Settings,
   VocabItem,
   newId,
+  addLearnLanguage,
+  rememberPair,
+  contentLanguages,
 } from './storage';
+import { PairMenu } from './components/PairMenu';
 import { DialogScreen } from './screens/DialogScreen';
 import { VocabScreen } from './screens/VocabScreen';
 import { PhraseScreen } from './screens/PhraseScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { EmergencyScreen } from './screens/EmergencyScreen';
 import { I18nProvider } from './i18n/I18nContext';
 import { makeT, resolveUiLang } from './i18n';
 import { applyThemeMode, resolveThemeMode } from './theme';
@@ -34,6 +45,7 @@ const TABS: { key: Tab; Icon: LucideIcon }[] = [
 export default function App() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>('dialog');
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [vocab, setVocab] = useState<VocabItem[]>([]);
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
@@ -75,7 +87,12 @@ export default function App() {
     if (settings) handleSaveSettings({ ...settings, inputLanguage: code });
   }
   function changeGoalLanguage(code: string) {
-    if (settings) handleSaveSettings({ ...settings, goalLanguage: code });
+    if (settings)
+      handleSaveSettings({
+        ...settings,
+        goalLanguage: code,
+        learnLanguages: addLearnLanguage(settings.learnLanguages, code),
+      });
   }
   // Flip spoken (input) and learned (goal) in one write to avoid clobbering.
   function swapLanguages() {
@@ -84,7 +101,49 @@ export default function App() {
         ...settings,
         inputLanguage: settings.goalLanguage,
         goalLanguage: settings.inputLanguage,
+        learnLanguages: addLearnLanguage(settings.learnLanguages, settings.inputLanguage),
       });
+  }
+  // Switch both languages at once from the header's quick menu.
+  function usePair(input: string, goal: string) {
+    if (settings)
+      handleSaveSettings({
+        ...settings,
+        inputLanguage: input,
+        goalLanguage: goal,
+        learnLanguages: addLearnLanguage(settings.learnLanguages, goal),
+      });
+  }
+  // Settings → "Languages I learn": manual add/remove of the learn set.
+  function addLearnLang(code: string) {
+    if (settings)
+      handleSaveSettings({
+        ...settings,
+        learnLanguages: addLearnLanguage(settings.learnLanguages, code),
+      });
+  }
+  function removeLearnLang(code: string) {
+    if (settings)
+      handleSaveSettings({
+        ...settings,
+        learnLanguages: settings.learnLanguages.filter((c) => c !== code),
+      });
+  }
+  function setEmergencyEnabled(value: boolean) {
+    if (settings) handleSaveSettings({ ...settings, emergencyEnabled: value });
+  }
+  // Saving a word/phrase marks the current pair as one the learner actually
+  // works in, so it shows up in the quick menu.
+  function notePairUsed() {
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        recentPairs: rememberPair(prev.recentPairs, prev.inputLanguage, prev.goalLanguage, Date.now()),
+      };
+      saveSettings(next);
+      return next;
+    });
   }
   function setShowPinyin(value: boolean) {
     if (settings) handleSaveSettings({ ...settings, showPinyin: value });
@@ -115,14 +174,22 @@ export default function App() {
   }
 
   // New vocab starts untagged; tags are added later via the row tag editor.
-  function addVocab(items: Omit<VocabItem, 'id' | 'createdAt' | 'tags'>[]) {
+  function addVocab(items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) {
     setVocab((prev) => {
       const existing = new Set(prev.map((v) => `${v.lang}:${v.term.toLowerCase()}`));
       const fresh = items
         .filter((i) => i.term.trim() && !existing.has(`${i.lang}:${i.term.toLowerCase()}`))
-        .map((i) => ({ ...i, id: newId(), tags: [] as string[], createdAt: Date.now() }));
+        .map((i) => ({
+          ...i,
+          id: newId(),
+          tags: [] as string[],
+          createdAt: Date.now(),
+          reviews: 0,
+          known: 0,
+        }));
       const next = [...fresh, ...prev];
       saveVocab(next);
+      if (fresh.length > 0) notePairUsed();
       return next;
     });
   }
@@ -150,6 +217,7 @@ export default function App() {
     const next = [item, ...phrases];
     setPhrases(next);
     savePhrases(next);
+    notePairUsed();
     return item.id;
   }
   function updatePhrase(id: string, patch: Partial<PhraseItem>) {
@@ -182,6 +250,9 @@ export default function App() {
   return (
     <I18nProvider lang={uiLang}>
       <div className="app">
+        {emergencyOpen && (
+          <EmergencyScreen settings={settings} onClose={() => setEmergencyOpen(false)} />
+        )}
         <div className="header">
           <div className="logo-mark">
             <span className="logo-mark-text">文</span>
@@ -192,6 +263,24 @@ export default function App() {
               Parl<span className="logo-a">a</span>
             </h1>
             <div className="tagline">{t('app.tagline').toUpperCase()}</div>
+          </div>
+          <div className="header-actions">
+            <PairMenu
+              input={settings.inputLanguage}
+              goal={settings.goalLanguage}
+              pairs={settings.recentPairs}
+              onPick={usePair}
+            />
+            {settings.emergencyEnabled && (
+              <button
+                className="header-emergency"
+                onClick={() => setEmergencyOpen(true)}
+                title={t('emergency.title')}
+                aria-label={t('emergency.title')}
+              >
+                <AlertTriangle size={20} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -225,6 +314,7 @@ export default function App() {
               phrases={phrases}
               onRemove={removePhrase}
               onUpdate={updatePhrase}
+              onAdd={addPhrase}
               tagSuggestions={recentTags(phrases)}
               settings={settings}
             />
@@ -234,9 +324,12 @@ export default function App() {
               settings={settings}
               onChangeInputLanguage={changeInputLanguage}
               onChangeGoalLanguage={changeGoalLanguage}
+              onAddLearnLanguage={addLearnLang}
+              onRemoveLearnLanguage={removeLearnLang}
               setUiLanguage={setUiLanguage}
               setDefaultMode={setDefaultMode}
               setTheme={setTheme}
+              setEmergencyEnabled={setEmergencyEnabled}
               setPro={setPro}
               purchasePro={purchasePro}
               restorePurchases={restorePurchases}

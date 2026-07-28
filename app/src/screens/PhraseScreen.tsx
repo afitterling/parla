@@ -16,11 +16,24 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { AnswerMode, PhraseItem, Settings, loadQuizPrefs, recentTags, saveQuizPrefs } from '../storage';
+import {
+  AnswerMode,
+  isPaywallActive,
+  PhraseItem,
+  Settings,
+  loadQuizPrefs,
+  recentTags,
+  saveQuizPrefs,
+} from '../storage';
 import { answerMatches } from '../answers';
-import { transliterate } from '../api';
+import { scanImageForPhrases, transcribeAudio, translatePhrase, transliterate } from '../api';
 import { ExportFormat, exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
+import { useRecorder } from '../useRecorder';
+import { useScanFlow } from '../useScanFlow';
+import { BusyOverlay } from '../components/BusyOverlay';
+import { MicButton } from '../components/MicButton';
+import { Paywall } from '../components/Paywall';
 import { SwipeRow } from '../components/SwipeRow';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
@@ -41,17 +54,47 @@ export function PhraseScreen({
   phrases,
   onRemove,
   onUpdate,
+  onAdd,
+  onPurchasePro,
   settings,
-}: Props & { settings: Settings }) {
+}: Props & {
+  settings: Settings;
+  onAdd: (items: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known' | 'tags'>[]) => void;
+  onPurchasePro: () => void;
+}) {
   const t = useT();
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const [view, setView] = useState<View2>('list');
   const [learnPhrase, setLearnPhrase] = useState<PhraseItem | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // Only phrases in the currently selected goal language.
   const shown = phrases.filter((p) => p.lang === settings.goalLanguage);
   const tags = recentTags(shown);
+
+  const goalLang = findLanguage(settings.goalLanguage);
+  const inputLang = findLanguage(settings.inputLanguage);
+
+  // Payment-gated: photograph text (a page, sign, menu …) and turn it into
+  // phrase entries. Non-Pro Release builds hit the paywall; the local dev build
+  // is exempt (isPaywallActive).
+  const scan = useScanFlow({
+    paywallActive: isPaywallActive(settings.isPro),
+    extract: (base64, signal) =>
+      scanImageForPhrases(settings.openaiKey, base64, goalLang, inputLang, !!goalLang.romanize, signal),
+    add: (items) => onAdd(items.map((p) => ({ ...p, lang: settings.goalLanguage }))),
+    labels: {
+      menuTitle: t('scan.phraseTitle'),
+      camera: t('scan.camera'),
+      library: t('scan.library'),
+      cancel: t('common.cancel'),
+      reading: t('scan.reading'),
+      none: t('scan.none'),
+      added: (count) => t('scan.addedPhrases', { count: String(count) }),
+      permission: t('scan.permission'),
+    },
+  });
 
   function startLearn(item: PhraseItem) {
     setLearnPhrase(item);
@@ -89,6 +132,14 @@ export function PhraseScreen({
         <Text style={styles.topCount}>
           {shown.length} {shown.length === 1 ? t('phrase.one') : t('phrase.many')}
         </Text>
+        <Pressable
+          style={[styles.exportBtn, styles.scanBtn]}
+          onPress={scan.open}
+          hitSlop={8}
+          accessibilityLabel={t('scan.phraseTitle')}
+        >
+          <Ionicons name="scan-outline" size={18} color={theme.colors.accent} />
+        </Pressable>
         {shown.length > 0 && (
           <Pressable
             style={styles.exportBtn}
@@ -97,6 +148,14 @@ export function PhraseScreen({
             accessibilityLabel={t('export.title')}
           >
             <Ionicons name="share-outline" size={18} color={theme.colors.accent} />
+          </Pressable>
+        )}
+        {view === 'list' && (
+          <Pressable style={styles.addToggle} onPress={() => setAdding((v) => !v)}>
+            <Ionicons name={adding ? 'close' : 'add'} size={15} color="#fff" />
+            <Text style={styles.addToggleText}>
+              {adding ? t('common.cancel') : t('phrase.ask')}
+            </Text>
           </Pressable>
         )}
       </View>
@@ -114,6 +173,7 @@ export function PhraseScreen({
           active={view === 'train'}
           onPress={() => {
             setLearnPhrase(null);
+            setAdding(false);
             setView('train');
           }}
         />
@@ -123,11 +183,15 @@ export function PhraseScreen({
           active={view === 'quiz'}
           onPress={() => {
             setLearnPhrase(null);
+            setAdding(false);
             setView('quiz');
           }}
         />
       </View>
 
+      {view === 'list' && adding && (
+        <PhraseAdd settings={settings} onAdd={onAdd} onDone={() => setAdding(false)} />
+      )}
       {view === 'list' && (
         <ListView
           phrases={shown}
@@ -150,7 +214,204 @@ export function PhraseScreen({
       {view === 'quiz' && (
         <QuizView phrases={shown} onUpdate={onUpdate} tagSuggestions={tags} settings={settings} />
       )}
+
+      <BusyOverlay visible={!!scan.busy} label={scan.busy} onCancel={scan.cancel} />
+      <Paywall
+        visible={scan.showPaywall}
+        onClose={scan.closePaywall}
+        onUpgrade={() => {
+          onPurchasePro();
+          scan.closePaywall();
+        }}
+      />
     </KeyboardAvoidingView>
+  );
+}
+
+// ── "How would I say …" ──────────────────────────────────────────────────────
+// Type (or speak) what you want to say in your own language, let it be turned
+// into the phrase a native speaker would use, then save it like any other
+// phrase. Works in both directions: fill either field and translate the other.
+function PhraseAdd({
+  settings,
+  onAdd,
+  onDone,
+}: {
+  settings: Settings;
+  onAdd: (items: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known' | 'tags'>[]) => void;
+  onDone: () => void;
+}) {
+  const t = useT();
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const [ask, setAsk] = useState(''); // what the learner wants to say (input language)
+  const [target, setTarget] = useState(''); // the phrase in the goal language
+  // Reading of the target, prefilled by the translation; cleared when the
+  // target is edited by hand (the reading belongs to that exact wording).
+  const [reading, setReading] = useState('');
+  const [translating, setTranslating] = useState(false);
+  const recorder = useRecorder();
+  const [transcribing, setTranscribing] = useState(false);
+  const [micTarget, setMicTarget] = useState<'ask' | 'target'>('ask');
+
+  const goalLang = findLanguage(settings.goalLanguage);
+  const inputLang = findLanguage(settings.inputLanguage);
+  const wantReading = !!goalLang.romanize;
+
+  // Speak instead of typing: tap to record, tap again to stop and transcribe.
+  // The ask field records in the learner's language, the target field in the
+  // goal language.
+  async function onMicPress(field: 'ask' | 'target') {
+    const active = recorder.state === 'recording' ? micTarget : field;
+    const title = active === 'ask' ? t('phrase.speakAsk') : t('phrase.speakTarget');
+    if (recorder.state === 'recording') {
+      try {
+        setTranscribing(true);
+        const uri = await recorder.stop();
+        if (uri) {
+          const lang = micTarget === 'ask' ? inputLang : goalLang;
+          const text = (await transcribeAudio(uri, settings.openaiKey, lang)).trim();
+          if (!text) Alert.alert(title, t('dialog.errorNoSpeech'));
+          else if (micTarget === 'ask') setAsk(text);
+          else {
+            setTarget(text);
+            setReading('');
+          }
+        }
+      } catch (e: any) {
+        Alert.alert(title, e?.message ?? String(e));
+      } finally {
+        setTranscribing(false);
+      }
+    } else {
+      try {
+        setMicTarget(field);
+        await recorder.start();
+      } catch (e: any) {
+        Alert.alert(title, e?.message ?? t('dialog.errorRecording'));
+      }
+    }
+  }
+
+  // Fill the empty side from the filled one — the "how would I say" direction
+  // is the common one, the reverse turns an overheard phrase into an entry.
+  async function onTranslatePress() {
+    if (translating) return;
+    const haveAsk = !!ask.trim();
+    const haveTarget = !!target.trim();
+    if (haveAsk === haveTarget) return;
+    setTranslating(true);
+    try {
+      if (haveAsk) {
+        const res = await translatePhrase(
+          settings.openaiKey,
+          ask.trim(),
+          inputLang,
+          goalLang,
+          wantReading
+        );
+        setTarget(res.text);
+        setReading(res.reading ?? '');
+      } else {
+        const res = await translatePhrase(
+          settings.openaiKey,
+          target.trim(),
+          goalLang,
+          inputLang,
+          false
+        );
+        setAsk(res.text);
+      }
+    } catch (e: any) {
+      Alert.alert(t('phrase.ask'), e?.message ?? String(e));
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  function submit() {
+    if (!target.trim()) return;
+    onAdd([
+      {
+        target: target.trim(),
+        translation: ask.trim(),
+        pinyin: reading.trim() || undefined,
+        lang: settings.goalLanguage,
+      },
+    ]);
+    setAsk('');
+    setTarget('');
+    setReading('');
+    onDone();
+  }
+
+  return (
+    <View style={styles.addCard}>
+      <View style={styles.inputRow}>
+        <TextInput
+          style={[styles.input, styles.inputFlex]}
+          placeholder={t('phrase.askPlaceholder', { lang: inputLang.nativeName })}
+          placeholderTextColor={theme.colors.textFaint}
+          value={ask}
+          onChangeText={setAsk}
+          autoFocus
+          multiline
+        />
+        <MicButton
+          recording={recorder.state === 'recording' && micTarget === 'ask'}
+          busy={transcribing && micTarget === 'ask'}
+          onPress={() => onMicPress('ask')}
+          label={t('phrase.speakAsk')}
+        />
+      </View>
+      <View style={styles.inputRow}>
+        <TextInput
+          style={[styles.input, styles.inputFlex]}
+          placeholder={t('phrase.targetPlaceholder', { lang: goalLang.nativeName })}
+          placeholderTextColor={theme.colors.textFaint}
+          value={target}
+          onChangeText={(v) => {
+            setTarget(v);
+            // Hand-editing the phrase invalidates a reading that came from
+            // auto-translate.
+            setReading('');
+          }}
+          multiline
+        />
+        <MicButton
+          recording={recorder.state === 'recording' && micTarget === 'target'}
+          busy={transcribing && micTarget === 'target'}
+          onPress={() => onMicPress('target')}
+          label={t('phrase.speakTarget')}
+        />
+      </View>
+      {!!reading && <Text style={styles.addPinyin}>{reading}</Text>}
+      {/* Enabled only when exactly one side is filled — it fills the other. */}
+      {!!ask.trim() !== !!target.trim() && (
+        <Pressable
+          style={styles.translateBtn}
+          onPress={onTranslatePress}
+          disabled={translating}
+          accessibilityLabel={t('vocab.translate')}
+        >
+          {translating ? (
+            <ActivityIndicator size="small" color={theme.colors.accent} />
+          ) : (
+            <>
+              <Ionicons name="sparkles-outline" size={16} color={theme.colors.accent} />
+              <Text style={styles.translateBtnText}>{t('vocab.translate')}</Text>
+            </>
+          )}
+        </Pressable>
+      )}
+      <Pressable
+        style={[styles.saveBtn, !target.trim() && styles.bigBtnDisabled]}
+        disabled={!target.trim()}
+        onPress={submit}
+      >
+        <Text style={styles.saveBtnText}>{t('common.save')}</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -804,6 +1065,61 @@ function makeStyles(theme: Theme) {
     justifyContent: 'center',
     backgroundColor: theme.colors.accentDim,
   },
+  // The scan button is the first right-aligned action; a following export button
+  // (when there are phrases) sits next to it via the row's gap.
+  scanBtn: { marginLeft: 'auto' },
+  addToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  addToggleText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+
+  // "How would I say …" add card
+  addCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    padding: 14,
+    gap: 10,
+  },
+  input: {
+    backgroundColor: theme.colors.bgElevated,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    color: theme.colors.text,
+    fontSize: 15,
+  },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inputFlex: { flex: 1 },
+  // Reading of an auto-translated phrase, previewed before saving.
+  addPinyin: { color: theme.colors.accent2, fontSize: 13, marginTop: -4, paddingLeft: 4 },
+  translateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+    paddingVertical: 11,
+  },
+  translateBtnText: { color: theme.colors.accent, fontWeight: '700', fontSize: 14 },
+  saveBtn: {
+    backgroundColor: theme.colors.accent2,
+    borderRadius: theme.radius.sm,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  saveBtnText: { color: '#001b1f', fontWeight: '800', fontSize: 14 },
   segment: {
     flexDirection: 'row',
     backgroundColor: theme.colors.bgElevated,

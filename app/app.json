@@ -65,6 +65,13 @@
         {
           "locationWhenInUsePermission": "Parla zeigt im Notfall deinen Standort an, damit du ihn Helfern zeigen kannst."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Parla liest Text aus einem Foto, um daraus Vokabeln und Sätze zu erstellen.",
+          "cameraPermission": "Parla nutzt die Kamera, um Text zu fotografieren und daraus Vokabeln und Sätze zu erstellen."
+        }
       ]
     ],
     "extra": {
