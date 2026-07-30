@@ -9,7 +9,39 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package:mac": "electron-vite build && electron-builder --mac",
+    "install:mac": "npm run package:mac && ./scripts/install-mac.sh"
+  },
+  "build": {
+    "appId": "tech.sp33c.parla.desktop",
+    "productName": "Parla",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.education",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Parla nutzt das Mikrofon, um deine Aussprache aufzunehmen und zu transkribieren.",
+        "NSLocationWhenInUseUsageDescription": "Parla nutzt deinen Standort, um im Notfall-Modus deine Position zu teilen."
+      }
+    }
   },
   "dependencies": {
     "hanzi-writer": "^3.7.3",
@@ -22,6 +54,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
