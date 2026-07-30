@@ -7,15 +7,24 @@ import {
   Copy,
   Check,
   PencilLine,
+  ScanText,
   Sparkles,
   RefreshCw,
   Brush,
 } from 'lucide-react';
-import { Settings, VocabItem, recentTags } from '../storage';
+import { Settings, VocabItem, isPaywallActive, recentTags } from '../storage';
 import { exportVocab } from '../export';
-import { generateVocabExample, transcribeAudio, translateVocabTerm } from '../api';
+import {
+  generateVocabExample,
+  scanImageForVocab,
+  transcribeAudio,
+  translateVocabTerm,
+} from '../api';
 import { findLanguage, speechLocale, usesHanzi, hasHanzi } from '../languages';
 import { useRecorder } from '../recorder';
+import { useScanFlow } from '../useScanFlow';
+import { BusyOverlay } from '../components/BusyOverlay';
+import { Paywall } from '../components/Paywall';
 import { Row } from '../components/Row';
 import { MicButton } from '../components/MicButton';
 import { SpeakButton } from '../components/SpeakButton';
@@ -23,6 +32,7 @@ import { TagBadges } from '../components/TagModal';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
 import { ExportMenu } from '../components/ExportMenu';
 import { WordCard } from '../components/WordCard';
+import { LearnDrill } from '../components/LearnDrill';
 import { useTaggedList, ListControls, TagFilterRow } from '../components/TaggedList';
 import { useT } from '../i18n/I18nContext';
 import type { TFn } from '../i18n';
@@ -33,10 +43,19 @@ type Props = {
   onRemove: (id: string) => void;
   onAdd: (items: Omit<VocabItem, 'id' | 'createdAt' | 'tags' | 'reviews' | 'known'>[]) => void;
   onUpdate: (id: string, patch: Partial<VocabItem>) => void;
+  onPurchasePro: () => void;
   tagSuggestions: string[];
 };
 
-export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSuggestions }: Props) {
+export function VocabScreen({
+  vocab,
+  settings,
+  onRemove,
+  onAdd,
+  onUpdate,
+  onPurchasePro,
+  tagSuggestions,
+}: Props) {
   const t = useT();
   const [term, setTerm] = useState('');
   const [translation, setTranslation] = useState('');
@@ -52,6 +71,8 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   const [translating, setTranslating] = useState(false);
   // The word currently shown full-screen (WordCard); null = closed.
   const [card, setCard] = useState<{ item: VocabItem; strokes: boolean } | null>(null);
+  // The word being drilled on its own (LearnDrill); null = closed.
+  const [drillId, setDrillId] = useState<string | null>(null);
 
   // Only vocab in the currently selected goal language.
   const shown = vocab.filter((v) => v.lang === settings.goalLanguage);
@@ -61,6 +82,22 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
   // Generate the reading whenever the goal language has one.
   const wantPinyin = !!goalLang.romanize;
 
+  // Payment-gated: pick a photo of text (a page, sign, menu …) and turn it into
+  // dictionary entries. Non-Pro builds hit the paywall; the dev build is exempt
+  // (isPaywallActive).
+  const scan = useScanFlow({
+    paywallActive: isPaywallActive(settings.isPro),
+    extract: (base64, signal) =>
+      scanImageForVocab(settings.openaiKey, base64, goalLang, inputLang, wantPinyin, signal),
+    add: (items) => onAdd(items.map((v) => ({ ...v, lang: settings.goalLanguage }))),
+    labels: {
+      menuTitle: t('scan.vocabTitle'),
+      reading: t('scan.reading'),
+      none: t('scan.none'),
+      added: (count) => t('scan.addedVocab', { count: String(count) }),
+    },
+  });
+
   // Search + tag-filter + group-by-tag over the shown words (shared with Phrases).
   const { search, setSearch, ordering, setOrdering, filterTags, setFilterTags, latest, sections } =
     useTaggedList(
@@ -69,18 +106,19 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
       t('phrase.untagged')
     );
 
-  // Quiz over words that have a meaning to show as the prompt.
-  const quizItems: QuizItem[] = shown
-    .filter((v) => v.translation.trim())
-    .map((v) => ({
-      id: v.id,
-      prompt: v.translation,
-      answer: v.term,
-      pinyin: v.pinyin,
-      tags: v.tags,
-      lang: v.lang,
-      known: v.known,
-    }));
+  // Every word goes to the quiz — which of them can actually be asked depends on
+  // the session's direction (a word without a translation can still be asked for
+  // its pinyin), so that filtering happens there.
+  const quizItems: QuizItem[] = shown.map((v) => ({
+    id: v.id,
+    term: v.term,
+    translation: v.translation,
+    pinyin: v.pinyin,
+    tags: v.tags,
+    lang: v.lang,
+    createdAt: v.createdAt,
+    known: v.known ?? 0,
+  }));
 
   // A word still needs enrichment if it lacks an example, a translation for that
   // example, or — when the goal language is transliterated — the word's own
@@ -210,8 +248,31 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
 
   const oneSideFilled = !!term.trim() !== !!translation.trim();
 
+  // Count a quiz/drill answer on the word itself.
+  function recordReview(id: string, correct: boolean) {
+    const v = shown.find((x) => x.id === id);
+    if (!v) return;
+    onUpdate(id, { reviews: (v.reviews ?? 0) + 1, known: (v.known ?? 0) + (correct ? 1 : 0) });
+  }
+
+  // Looked up by id, so a word edited while it is being drilled (a backfilled
+  // reading, say) updates in place — and a deleted one closes the drill.
+  const drillItem = drillId ? shown.find((v) => v.id === drillId) : undefined;
+
   return (
     <div className="screen">
+      {drillItem && (
+        <LearnDrill
+          item={drillItem}
+          goalLangName={goalLang.nativeName}
+          nativeLangName={inputLang.nativeName}
+          romanized={!!goalLang.romanize}
+          locale={speechLocale(goalLang)}
+          onResult={(correct) => recordReview(drillItem.id, correct)}
+          onClose={() => setDrillId(null)}
+        />
+      )}
+
       {card && (
         <WordCard
           item={card.item}
@@ -222,6 +283,10 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           onFillPinyin={(pinyin) => {
             onUpdate(card.item.id, { pinyin });
             setCard((c) => (c ? { ...c, item: { ...c.item, pinyin } } : c));
+          }}
+          onLearn={() => {
+            setDrillId(card.item.id);
+            setCard(null);
           }}
           onClose={() => setCard(null)}
         />
@@ -253,6 +318,14 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
             {shown.length > 0 && (
               <ExportMenu onPick={(f) => exportVocab(shown, settings.goalLanguage, f)} />
             )}
+            <button
+              className="icon-soft"
+              onClick={scan.open}
+              title={t('scan.vocabTitle')}
+              aria-label={t('scan.vocabTitle')}
+            >
+              <ScanText size={17} />
+            </button>
             <button className="add-toggle" onClick={() => setAdding((v) => !v)}>
               {adding ? <X size={15} /> : <Plus size={15} />}
               {adding ? t('common.cancel') : t('common.new')}
@@ -289,11 +362,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           locale={speechLocale(goalLang)}
           tagSuggestions={tagSuggestions}
           scope="vocab"
-          onResult={(id, correct) => {
-            const v = shown.find((x) => x.id === id);
-            if (!v) return;
-            onUpdate(id, { reviews: (v.reviews ?? 0) + 1, known: (v.known ?? 0) + (correct ? 1 : 0) });
-          }}
+          onResult={recordReview}
         />
       ) : (
         <>
@@ -380,6 +449,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
                         onRemove={onRemove}
                         onGenerate={generateExample}
                         onOpen={(strokes) => setCard({ item, strokes })}
+                        onLearn={() => setDrillId(item.id)}
                         t={t}
                       />
                     ))
@@ -402,6 +472,7 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
                             onRemove={onRemove}
                             onGenerate={generateExample}
                             onOpen={(strokes) => setCard({ item, strokes })}
+                            onLearn={() => setDrillId(item.id)}
                             t={t}
                           />
                         ))}
@@ -414,6 +485,16 @@ export function VocabScreen({ vocab, settings, onRemove, onAdd, onUpdate, tagSug
           )}
         </>
       )}
+
+      <BusyOverlay visible={!!scan.busy} label={scan.busy} onCancel={scan.cancel} />
+      <Paywall
+        visible={scan.showPaywall}
+        onClose={scan.closePaywall}
+        onUpgrade={() => {
+          onPurchasePro();
+          scan.closePaywall();
+        }}
+      />
     </div>
   );
 }
@@ -423,12 +504,14 @@ function VocabRow({
   onRemove,
   onGenerate,
   onOpen,
+  onLearn,
   t,
 }: {
   item: VocabItem;
   onRemove: (id: string) => void;
   onGenerate: (item: VocabItem) => Promise<void>;
   onOpen: (strokes: boolean) => void;
+  onLearn: () => void;
   t: TFn;
 }) {
   const locale = speechLocale(findLanguage(item.lang));
@@ -459,7 +542,13 @@ function VocabRow({
   }
 
   return (
-    <Row onDelete={() => onRemove(item.id)} onTap={() => onOpen(false)} deleteLabel={t('swipe.delete')}>
+    <Row
+      onDelete={() => onRemove(item.id)}
+      onLearn={onLearn}
+      onTap={() => onOpen(false)}
+      deleteLabel={t('swipe.delete')}
+      learnLabel={t('swipe.learn')}
+    >
       <div className="vocab-inner">
         <div className="vocab-main">
           <div className="term">{item.term}</div>

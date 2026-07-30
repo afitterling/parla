@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, X, Check } from 'lucide-react';
-import { LANGUAGES } from '../languages';
+import { LANGUAGES, Language } from '../languages';
 import { useT } from '../i18n/I18nContext';
 
 // Searchable, scrollable language picker shared by Settings and the Dialog bar.
@@ -12,7 +12,14 @@ type Props = {
   selectedCode: string;
   onSelect: (code: string) => void;
   onClose: () => void;
+  // Languages the learner already has content in. When given (and not
+  // searching), they appear in an "Existing content" section on top and the
+  // remaining languages follow under "All languages".
+  priorityCodes?: string[];
 };
+
+// Rows of the list: section headers mixed into the language rows.
+type Row = { kind: 'header'; title: string } | { kind: 'lang'; lang: Language };
 
 // Lowercase + strip diacritics so "espanol" matches "Español".
 function fold(s: string): string {
@@ -22,20 +29,44 @@ function fold(s: string): string {
     .replace(/[̀-ͯ]/g, '');
 }
 
-export function LanguagePicker({ visible, title, selectedCode, onSelect, onClose }: Props) {
+export function LanguagePicker({
+  visible,
+  title,
+  selectedCode,
+  onSelect,
+  onClose,
+  priorityCodes,
+}: Props) {
   const t = useT();
   const [query, setQuery] = useState('');
 
-  const results = useMemo(() => {
+  const results = useMemo<Row[]>(() => {
     const q = fold(query.trim());
-    if (!q) return LANGUAGES;
-    return LANGUAGES.filter(
-      (l) =>
-        fold(l.nativeName).includes(q) ||
-        fold(l.label).includes(q) ||
-        l.code.toLowerCase().includes(q)
-    );
-  }, [query]);
+    if (q) {
+      // Searching flattens the sections — match across the whole list.
+      return LANGUAGES.filter(
+        (l) =>
+          fold(l.nativeName).includes(q) ||
+          fold(l.label).includes(q) ||
+          l.code.toLowerCase().includes(q)
+      ).map((lang) => ({ kind: 'lang' as const, lang }));
+    }
+    const priority = (priorityCodes ?? [])
+      .map((code) => LANGUAGES.find((l) => l.code === code))
+      .filter((l): l is Language => !!l);
+    if (priority.length === 0) return LANGUAGES.map((lang) => ({ kind: 'lang' as const, lang }));
+    const inPriority = new Set(priority.map((l) => l.code));
+    return [
+      { kind: 'header' as const, title: t('langPicker.existing') },
+      ...priority.map((lang) => ({ kind: 'lang' as const, lang })),
+      { kind: 'header' as const, title: t('langPicker.all') },
+      ...LANGUAGES.filter((l) => !inPriority.has(l.code)).map((lang) => ({
+        kind: 'lang' as const,
+        lang,
+      })),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, priorityCodes]);
 
   function close() {
     setQuery('');
@@ -79,7 +110,15 @@ export function LanguagePicker({ visible, title, selectedCode, onSelect, onClose
 
         <div className="sheet-list">
           {results.length === 0 && <p className="no-match">{t('langPicker.noMatch')}</p>}
-          {results.map((item) => {
+          {results.map((row) => {
+            if (row.kind === 'header') {
+              return (
+                <div key={`h:${row.title}`} className="section-head">
+                  {row.title}
+                </div>
+              );
+            }
+            const item = row.lang;
             const active = item.code === selectedCode;
             return (
               <button

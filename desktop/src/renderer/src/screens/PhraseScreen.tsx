@@ -8,6 +8,7 @@ import {
   Check,
   X,
   Plus,
+  ScanText,
   Sparkles,
   ArrowRight,
   CheckCircle2,
@@ -18,20 +19,25 @@ import {
   AnswerMode,
   PhraseItem,
   Settings,
+  isPaywallActive,
   loadQuizPrefs,
   recentTags,
   saveQuizPrefs,
 } from '../storage';
 import { answerMatches } from '../answers';
-import { transcribeAudio, translatePhrase } from '../api';
+import { scanImageForPhrases, transcribeAudio, translatePhrase } from '../api';
 import { exportPhrases } from '../export';
 import { findLanguage, speechLocale } from '../languages';
 import { useRecorder } from '../recorder';
+import { useScanFlow } from '../useScanFlow';
+import { BusyOverlay } from '../components/BusyOverlay';
+import { Paywall } from '../components/Paywall';
 import { Row } from '../components/Row';
 import { MicButton } from '../components/MicButton';
 import { SpeakButton } from '../components/SpeakButton';
 import { TagBadges, TagModal } from '../components/TagModal';
 import { QuizItem, TypeQuiz } from '../components/TypeQuiz';
+import { LearnDrill } from '../components/LearnDrill';
 import { ExportMenu } from '../components/ExportMenu';
 import {
   useTaggedList,
@@ -46,28 +52,85 @@ type Props = {
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<PhraseItem>) => void;
   onAdd: (p: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known'>) => string;
+  onAddMany: (items: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known' | 'tags'>[]) => void;
+  onPurchasePro: () => void;
   tagSuggestions: string[];
 };
 
 type View2 = 'list' | 'train' | 'quiz';
 
-export function PhraseScreen({ phrases, onRemove, onUpdate, onAdd, settings }: Props) {
+export function PhraseScreen({
+  phrases,
+  onRemove,
+  onUpdate,
+  onAdd,
+  onAddMany,
+  onPurchasePro,
+  settings,
+}: Props) {
   const t = useT();
   const [view, setView] = useState<View2>('list');
-  const [learnPhrase, setLearnPhrase] = useState<PhraseItem | null>(null);
+  // The phrase being drilled on its own (LearnDrill); null = closed.
+  const [drillId, setDrillId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   // Only phrases in the currently selected goal language.
   const shown = phrases.filter((p) => p.lang === settings.goalLanguage);
   const tags = recentTags(shown);
 
-  function startLearn(item: PhraseItem) {
-    setLearnPhrase(item);
-    setView('train');
-  }
+  const goalLang = findLanguage(settings.goalLanguage);
+  const inputLang = findLanguage(settings.inputLanguage);
+
+  // Payment-gated: pick a photo of text (a page, sign, menu …) and turn it into
+  // phrase entries. Non-Pro builds hit the paywall; the dev build is exempt.
+  const scan = useScanFlow({
+    paywallActive: isPaywallActive(settings.isPro),
+    extract: (base64, signal) =>
+      scanImageForPhrases(
+        settings.openaiKey,
+        base64,
+        goalLang,
+        inputLang,
+        !!goalLang.romanize,
+        signal
+      ),
+    add: (items) => onAddMany(items.map((p) => ({ ...p, lang: settings.goalLanguage }))),
+    labels: {
+      menuTitle: t('scan.phraseTitle'),
+      reading: t('scan.reading'),
+      none: t('scan.none'),
+      added: (count) => t('scan.addedPhrases', { count: String(count) }),
+    },
+  });
+
+  // Looked up by id so an edit while drilling lands in the drill, and a deleted
+  // phrase closes it.
+  const drillItem = drillId ? shown.find((p) => p.id === drillId) : undefined;
 
   return (
     <div className="screen">
+      {drillItem && (
+        <LearnDrill
+          item={{
+            id: drillItem.id,
+            term: drillItem.target,
+            pinyin: drillItem.pinyin,
+            translation: drillItem.translation,
+          }}
+          goalLangName={goalLang.nativeName}
+          nativeLangName={inputLang.nativeName}
+          romanized={!!goalLang.romanize}
+          locale={speechLocale(goalLang)}
+          onResult={(correct) =>
+            onUpdate(drillItem.id, {
+              reviews: drillItem.reviews + 1,
+              known: drillItem.known + (correct ? 1 : 0),
+            })
+          }
+          onClose={() => setDrillId(null)}
+        />
+      )}
+
       <div className="top-row">
         <span className="lang-badge">
           <Languages size={14} />
@@ -80,6 +143,14 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, onAdd, settings }: P
           {shown.length > 0 && (
             <ExportMenu onPick={(f) => exportPhrases(shown, settings.goalLanguage, f)} />
           )}
+          <button
+            className="icon-soft"
+            onClick={scan.open}
+            title={t('scan.phraseTitle')}
+            aria-label={t('scan.phraseTitle')}
+          >
+            <ScanText size={17} />
+          </button>
           {view === 'list' && (
             <button className="add-toggle" onClick={() => setAdding((v) => !v)}>
               {adding ? <X size={15} /> : <Plus size={15} />}
@@ -100,7 +171,6 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, onAdd, settings }: P
         <button
           className={`seg-btn${view === 'train' ? ' active' : ''}`}
           onClick={() => {
-            setLearnPhrase(null);
             setAdding(false);
             setView('train');
           }}
@@ -111,7 +181,6 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, onAdd, settings }: P
         <button
           className={`seg-btn${view === 'quiz' ? ' active' : ''}`}
           onClick={() => {
-            setLearnPhrase(null);
             setAdding(false);
             setView('quiz');
           }}
@@ -134,21 +203,25 @@ export function PhraseScreen({ phrases, onRemove, onUpdate, onAdd, settings }: P
           onRemove={onRemove}
           onUpdate={onUpdate}
           tagSuggestions={tags}
-          onLearn={startLearn}
+          onLearn={(item) => setDrillId(item.id)}
         />
       )}
       {view === 'train' && (
-        <TrainView
-          phrases={shown}
-          onUpdate={onUpdate}
-          tagSuggestions={tags}
-          learnPhrase={learnPhrase}
-          onClearLearn={() => setLearnPhrase(null)}
-        />
+        <TrainView phrases={shown} onUpdate={onUpdate} tagSuggestions={tags} />
       )}
       {view === 'quiz' && (
         <QuizView phrases={shown} onUpdate={onUpdate} tagSuggestions={tags} settings={settings} />
       )}
+
+      <BusyOverlay visible={!!scan.busy} label={scan.busy} onCancel={scan.cancel} />
+      <Paywall
+        visible={scan.showPaywall}
+        onClose={scan.closePaywall}
+        onUpgrade={() => {
+          onPurchasePro();
+          scan.closePaywall();
+        }}
+      />
     </div>
   );
 }
@@ -330,17 +403,17 @@ function QuizView({
   settings: Settings;
 }) {
   const goalLang = findLanguage(settings.goalLanguage);
-  const items: QuizItem[] = phrases
-    .filter((p) => p.translation.trim())
-    .map((p) => ({
-      id: p.id,
-      prompt: p.translation,
-      answer: p.target,
-      pinyin: p.pinyin,
-      tags: p.tags,
-      lang: p.lang,
-      known: p.known,
-    }));
+  // The quiz drops what the chosen direction can't ask for, so no pre-filtering.
+  const items: QuizItem[] = phrases.map((p) => ({
+    id: p.id,
+    term: p.target,
+    translation: p.translation,
+    pinyin: p.pinyin,
+    tags: p.tags,
+    lang: p.lang,
+    createdAt: p.createdAt,
+    known: p.known,
+  }));
 
   return (
     <TypeQuiz
@@ -499,14 +572,10 @@ function TrainView({
   phrases,
   onUpdate,
   tagSuggestions,
-  learnPhrase,
-  onClearLearn,
 }: {
   phrases: PhraseItem[];
   onUpdate: (id: string, patch: Partial<PhraseItem>) => void;
   tagSuggestions: string[];
-  learnPhrase: PhraseItem | null;
-  onClearLearn: () => void;
 }) {
   const t = useT();
   // Show the original target-language phrase first by default.
@@ -544,16 +613,6 @@ function TrainView({
     [phrases, sessionTag]
   );
 
-  // Single-phrase "Learn" flow: start a one-card session immediately.
-  useEffect(() => {
-    if (learnPhrase) {
-      setDirection('t2de');
-      setQueue([learnPhrase.id]);
-      setTotal(1);
-      setRevealed(false);
-    }
-  }, [learnPhrase]);
-
   // Drop a card whose phrase vanished (deleted elsewhere) and continue.
   useEffect(() => {
     if (queue && queue.length > 0 && !phrases.find((p) => p.id === queue[0])) {
@@ -562,13 +621,6 @@ function TrainView({
   }, [queue, phrases]);
 
   function start() {
-    if (learnPhrase) {
-      setQueue([learnPhrase.id]);
-      setTotal(1);
-      setRevealed(false);
-      setInput('');
-      return;
-    }
     const ids = pool.map((p) => p.id);
     // Fisher–Yates shuffle.
     for (let i = ids.length - 1; i > 0; i--) {
@@ -585,7 +637,6 @@ function TrainView({
     setQueue(null);
     setRevealed(false);
     setInput('');
-    onClearLearn();
   }
 
   // Setup screen

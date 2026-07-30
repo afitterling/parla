@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Brush, Sparkles, RefreshCw, Tag } from 'lucide-react';
+import { X, Brush, Sparkles, RefreshCw, Tag, GraduationCap } from 'lucide-react';
 import { VocabItem } from '../storage';
 import { transliterate } from '../api';
 import { findLanguage, speechLocale, usesHanzi, hasHanzi } from '../languages';
@@ -19,6 +19,8 @@ type Props = {
   onChange: (tags: string[]) => void;
   /** Persist a backfilled reading onto the word. */
   onFillPinyin: (pinyin: string) => void;
+  /** Drill this one word on repeat (LearnDrill). */
+  onLearn: () => void;
   onClose: () => void;
   /** Open straight into stroke practice instead of the word side. */
   initialStrokes?: boolean;
@@ -30,6 +32,7 @@ export function WordCard({
   openaiKey,
   onChange,
   onFillPinyin,
+  onLearn,
   onClose,
   initialStrokes = false,
 }: Props) {
@@ -68,6 +71,10 @@ export function WordCard({
           <X size={22} />
         </button>
         <div className="wordcard-top-right">
+          <button className="wordcard-strokes-toggle" onClick={onLearn}>
+            <GraduationCap size={16} />
+            {t('swipe.learn')}
+          </button>
           {canStrokes && (
             <button
               className={`wordcard-strokes-toggle${strokes ? ' on' : ''}`}

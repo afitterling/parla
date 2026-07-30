@@ -761,3 +761,203 @@ function extractJson(text: string): any | null {
     return null;
   }
 }
+
+// ── Image → text (OCR) via OpenAI vision ─────────────────────────────────────
+// A photographed page, menu, sign or screenshot becomes ready-to-save entries:
+// the model reads the text off the image and pairs each item with a translation
+// (and a reading, where the goal language uses one). Works in either direction —
+// text in the goal language is translated into the learner's language, and text
+// in the learner's language is translated into the goal language — so the term
+// always ends up in the goal language and the translation in the input language.
+// The chat model handles both vision and translation, so this is one request.
+const VISION_MODEL = 'gpt-4o';
+
+// Shared request/parse for the two scan variants below.
+async function visionExtract(
+  openaiKey: string,
+  base64Jpeg: string,
+  system: string,
+  userText: string,
+  signal: AbortSignal | undefined,
+  timeoutMs: number
+): Promise<any> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+  if (!base64Jpeg) throw new Error('Kein Bild — bitte nochmal versuchen.');
+
+  const body = JSON.stringify({
+    model: VISION_MODEL,
+    max_tokens: 1500,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: userText },
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Jpeg}` } },
+        ],
+      },
+    ],
+  });
+
+  let res: Response | null = null;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Abgebrochen.');
+    const { signal: s, done } = linkSignals(signal, timeoutMs);
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+        body,
+        signal: s,
+      });
+      done();
+      lastErr = null;
+      break;
+    } catch (e: any) {
+      done();
+      lastErr = e;
+      if (signal?.aborted) throw new Error('Abgebrochen.');
+      if (e?.name === 'AbortError') break; // our timeout — don't keep retrying
+    }
+  }
+  if (!res) {
+    throw new Error(
+      lastErr?.name === 'AbortError'
+        ? 'Zeitüberschreitung — Netzwerk langsam. Nochmal versuchen.'
+        : 'Netzwerkfehler — bitte nochmal versuchen.'
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+  return extractJson(data?.choices?.[0]?.message?.content ?? '');
+}
+
+// Read individual words / short expressions off an image, ready for the
+// dictionary. Returns them in image order, de-duplicated.
+export async function scanImageForVocab(
+  openaiKey: string,
+  base64Jpeg: string,
+  goalLang: Language,
+  inputLang: Language,
+  wantPinyin: boolean,
+  signal?: AbortSignal
+): Promise<VocabSuggestion[]> {
+  const pinyinField = wantPinyin
+    ? ' "pinyin": "<lateinische Umschrift/Transliteration des Wortes>",'
+    : '';
+  const pinyinRule = wantPinyin
+    ? `\n- "pinyin": IMMER die lateinische Umschrift jedes Wortes im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+
+  const system = `Du bist ein Sprachlehrer für ${goalLang.label} (${goalLang.nativeName}). Auf dem Bild ist Text zu sehen (z.B. eine Buchseite, ein Schild, eine Speisekarte, ein Screenshot). Lies den sichtbaren Text und ziehe daraus die nützlichen einzelnen Wörter und festen Wendungen zum Lernen heraus.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{
+  "words": [
+    { "term": "<Wort/Wendung auf ${goalLang.nativeName}>",${pinyinField} "translation": "<Bedeutung auf ${inputLang.nativeName}>" }
+  ]
+}
+
+Regeln:
+- "term": IMMER auf ${goalLang.nativeName}. Ist der Text im Bild bereits auf ${goalLang.nativeName}, übernimm die Wörter (Grundform, wo sinnvoll). Ist er auf ${inputLang.nativeName} oder einer anderen Sprache, übersetze jedes Wort nach ${goalLang.nativeName}.
+- "translation": die Bedeutung auf ${inputLang.nativeName}.
+- Ein Eintrag pro sinntragendem Wort bzw. fester Wendung, in der Reihenfolge im Bild. Wiederhole identische Wörter nicht.
+- Lasse reine Zahlen, Preise, Satzzeichen und offensichtlichen Unsinn (OCR-Müll) weg.
+- Erkennst du keinen brauchbaren Text, gib { "words": [] } zurück.${pinyinRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const json = await visionExtract(
+    openaiKey,
+    base64Jpeg,
+    system,
+    'Lies den Text im Bild und liste die nützlichen Wörter/Wendungen auf.',
+    signal,
+    90000
+  );
+  const words = Array.isArray(json?.words) ? json.words : [];
+  const seen = new Set<string>();
+  const out: VocabSuggestion[] = [];
+  for (const w of words) {
+    if (!w || typeof w.term !== 'string') continue;
+    const term = w.term.trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      term,
+      pinyin: wantPinyin && w.pinyin ? String(w.pinyin).trim() || undefined : undefined,
+      translation: String(w.translation ?? '').trim(),
+    });
+  }
+  return out;
+}
+
+// Read whole phrases / sentences off an image, each with its translation and an
+// optional reading. Returns them in image order, de-duplicated.
+export async function scanImageForPhrases(
+  openaiKey: string,
+  base64Jpeg: string,
+  goalLang: Language,
+  inputLang: Language,
+  wantReading: boolean,
+  signal?: AbortSignal
+): Promise<{ target: string; translation: string; pinyin?: string }[]> {
+  const readingField = wantReading
+    ? ' "pinyin": "<lateinische Umschrift/Transliteration des Satzes>",'
+    : '';
+  const readingRule = wantReading
+    ? `\n- "pinyin": IMMER die lateinische Umschrift jedes Satzes im gängigen System der Zielsprache (Mandarin: Pinyin mit Tönen, Japanisch: Romaji, Koreanisch: Romaja, usw.).`
+    : '';
+
+  const system = `Du bist ein Sprachlehrer für ${goalLang.label} (${goalLang.nativeName}). Auf dem Bild ist Text zu sehen (z.B. eine Buchseite, ein Schild, eine Speisekarte, ein Screenshot). Lies den sichtbaren Text und ziehe daraus die nützlichen ganzen Sätze und Wendungen zum Lernen heraus.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{
+  "phrases": [
+    { "target": "<Satz/Wendung auf ${goalLang.nativeName}>",${readingField} "translation": "<Übersetzung auf ${inputLang.nativeName}>" }
+  ]
+}
+
+Regeln:
+- "target": IMMER auf ${goalLang.nativeName}. Ist der Text im Bild bereits auf ${goalLang.nativeName}, übernimm die Sätze. Ist er auf ${inputLang.nativeName} oder einer anderen Sprache, übersetze jeden Satz nach ${goalLang.nativeName}.
+- "translation": die Übersetzung auf ${inputLang.nativeName}.
+- Ein Eintrag pro sinntragendem Satz bzw. fester Wendung, in der Reihenfolge im Bild. Wiederhole identische Sätze nicht.
+- Lasse reine Zahlen, Preise und offensichtlichen Unsinn (OCR-Müll) weg.
+- Erkennst du keinen brauchbaren Text, gib { "phrases": [] } zurück.${readingRule}
+- Gib niemals etwas außerhalb des JSON-Objekts aus.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const json = await visionExtract(
+    openaiKey,
+    base64Jpeg,
+    system,
+    'Lies den Text im Bild und liste die nützlichen Sätze/Wendungen auf.',
+    signal,
+    90000
+  );
+  const phrases = Array.isArray(json?.phrases) ? json.phrases : [];
+  const seen = new Set<string>();
+  const out: { target: string; translation: string; pinyin?: string }[] = [];
+  for (const p of phrases) {
+    if (!p || typeof p.target !== 'string') continue;
+    const target = p.target.trim();
+    if (!target) continue;
+    const key = target.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      target,
+      translation: String(p.translation ?? '').trim(),
+      pinyin: wantReading && p.pinyin ? String(p.pinyin).trim() || undefined : undefined,
+    });
+  }
+  return out;
+}
+

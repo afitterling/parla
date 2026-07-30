@@ -220,6 +220,26 @@ export default function App() {
     notePairUsed();
     return item.id;
   }
+  // Batch insert (photo scan) — one functional update, so a whole page of
+  // phrases lands at once instead of each call clobbering the previous state.
+  function addPhrases(items: Omit<PhraseItem, 'id' | 'createdAt' | 'reviews' | 'known' | 'tags'>[]) {
+    setPhrases((prev) => {
+      const existing = new Set(prev.map((p) => `${p.lang}:${p.target.trim().toLowerCase()}`));
+      const fresh: PhraseItem[] = [];
+      for (const p of items) {
+        const key = `${p.lang}:${p.target.trim().toLowerCase()}`;
+        if (!p.target.trim() || existing.has(key)) continue;
+        existing.add(key);
+        fresh.push({ ...p, tags: [], id: newId(), createdAt: Date.now(), reviews: 0, known: 0 });
+      }
+      if (fresh.length === 0) return prev;
+      notePairUsed();
+      const next = [...fresh, ...prev];
+      savePhrases(next);
+      return next;
+    });
+  }
+
   function updatePhrase(id: string, patch: Partial<PhraseItem>) {
     setPhrases((prev) => {
       const next = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
@@ -296,6 +316,7 @@ export default function App() {
               onSwapLanguages={swapLanguages}
               onSetShowPinyin={setShowPinyin}
               onPurchasePro={purchasePro}
+              contentLangCodes={contentLanguages(settings.recentPairs, vocab, phrases)}
               tagSuggestions={recentTags(phrases)}
             />
           )}
@@ -305,6 +326,7 @@ export default function App() {
               onRemove={removeVocab}
               onAdd={addVocab}
               onUpdate={updateVocab}
+              onPurchasePro={purchasePro}
               tagSuggestions={recentTags(vocab)}
               settings={settings}
             />
@@ -315,6 +337,8 @@ export default function App() {
               onRemove={removePhrase}
               onUpdate={updatePhrase}
               onAdd={addPhrase}
+              onAddMany={addPhrases}
+              onPurchasePro={purchasePro}
               tagSuggestions={recentTags(phrases)}
               settings={settings}
             />

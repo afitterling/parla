@@ -60,11 +60,13 @@ type Props = {
   onSwapLanguages: () => void;
   onSetShowPinyin: (value: boolean) => void;
   onPurchasePro: () => void;
+  contentLangCodes: string[]; // languages with saved content — shown on top of the input picker
   tagSuggestions: string[];
 };
 
 export function DialogScreen({
   settings,
+  contentLangCodes,
   onAddVocab,
   onAddPhrase,
   onUpdatePhrase,
@@ -78,6 +80,11 @@ export function DialogScreen({
   const t = useT();
   const goalLang = findLanguage(settings.goalLanguage);
   const inputLang = findLanguage(settings.inputLanguage);
+  // Goal languages the learner has content in together with the current input
+  // language — the goal picker surfaces these under "Existing content".
+  const goalContentCodes = Array.from(
+    new Set(settings.recentPairs.filter((p) => p.input === inputLang.code).map((p) => p.goal))
+  );
   const wantPinyin = !!goalLang.romanize && settings.showPinyin;
   const [mode, setMode] = useState<Mode>(settings.defaultMode === 'ask' ? 'ask' : 'free');
   const [openMenu, setOpenMenu] = useState<'input' | 'goal' | null>(null);
@@ -344,6 +351,7 @@ export function DialogScreen({
         onSelect={(code) =>
           openMenu === 'input' ? onChangeInputLanguage(code) : onChangeGoalLanguage(code)
         }
+        priorityCodes={openMenu === 'input' ? contentLangCodes : goalContentCodes}
         onClose={() => setOpenMenu(null)}
       />
 
