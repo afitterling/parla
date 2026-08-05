@@ -45,6 +45,16 @@ export function WordCard({
     setStrokes(initialStrokes);
   }, [initialStrokes, item?.id]);
 
+  // Escape gets you out — the close button sits under the window's traffic
+  // lights corner, so a keyboard way out matters.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   if (!item) return null;
 
   const lang = findLanguage(item.lang);

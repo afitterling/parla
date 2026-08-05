@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CheckCircle2, Flame, X, XCircle } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, Flame, X, XCircle } from 'lucide-react';
 import { SpeakButton } from './SpeakButton';
 import { answerMatches } from '../answers';
 import { useT } from '../i18n/I18nContext';
@@ -62,6 +62,15 @@ export function LearnDrill({
   // Bumped every round so the input remounts and re-focuses on the next repeat.
   const [round, setRound] = useState(0);
 
+  // Escape ends the drill, wherever the focus is.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // The item can change under us (its pinyin gets backfilled, say) — start over
   // rather than grading the new item against the old streak.
   useEffect(() => {
@@ -75,6 +84,7 @@ export function LearnDrill({
   if (sides.length === 0) {
     return (
       <div className="learn-root">
+        <LearnScenery />
         <div className="learn-top">
           <button className="wordcard-icon" onClick={onClose} aria-label={t('common.done')}>
             <X size={22} />
@@ -157,6 +167,8 @@ export function LearnDrill({
 
   return (
     <div className="learn-root">
+      <LearnScenery />
+
       <div className="learn-top">
         <button className="wordcard-icon" onClick={onClose} aria-label={t('common.done')}>
           <X size={22} />
@@ -173,87 +185,111 @@ export function LearnDrill({
         </span>
       </div>
 
-      {sides.length > 1 && (
-        <>
-          <div className="train-hint">{t('learn.side')}</div>
-          <div className="quiz-setup-row">
-            {sides.map((s) => (
-              <button
-                key={s}
-                className={`filter-chip${side === s ? ' on' : ''}`}
-                onClick={() => chooseSide(s)}
-              >
-                {sideLabel[s]}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      <div className="quiz-scroll">
-        <div className="quiz-card">
-          <div className="side">{face.promptLabel}</div>
-          <div className="quiz-prompt">{face.prompt}</div>
-
-          <div className="quiz-hint">{face.hint}</div>
-          <div className="type-row">
-            <input
-              key={round}
-              className={`quiz-input${checked ? (lastCorrect ? ' correct' : ' wrong') : ''}`}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (checked ? again() : check())}
-              disabled={checked}
-              autoFocus
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={side === 'reading' ? 'pinyin …' : '…'}
-            />
-            {!checked && (
-              <button
-                className="type-submit"
-                disabled={!input.trim()}
-                onClick={check}
-                aria-label={t('quiz.check')}
-                title={t('quiz.check')}
-              >
-                <ArrowRight size={20} />
-              </button>
-            )}
-          </div>
-
-          {checked && (
-            <div className="quiz-result">
-              <div className={`quiz-verdict${lastCorrect ? ' ok' : ' bad'}`}>
-                {lastCorrect ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-                {lastCorrect ? t('quiz.correct') : t('quiz.wrong')}
-              </div>
-              {/* The whole card on every reveal — word, reading, meaning — so the
-                  repeat is also an exposure to the sides you weren't asked for. */}
-              <div className="quiz-answer-row">
-                <div className="quiz-answer-main">
-                  <div className="quiz-answer">{item.term}</div>
-                  {!!item.pinyin && <div className="quiz-answer-pinyin">{item.pinyin}</div>}
-                  {!!item.translation && <div className="quiz-answer-trans">{item.translation}</div>}
-                </div>
-                <SpeakButton text={item.term} locale={locale} />
+      {/* One centered column: the item is the only thing here, so it sits in the
+          middle of the window rather than stretching across it. */}
+      <div className="learn-stage">
+        <div className="learn-col">
+          {sides.length > 1 && (
+            <div className="learn-sides">
+              <div className="learn-sides-label">{t('learn.side')}</div>
+              <div className="quiz-setup-row">
+                {sides.map((s) => (
+                  <button
+                    key={s}
+                    className={`filter-chip${side === s ? ' on' : ''}`}
+                    onClick={() => chooseSide(s)}
+                  >
+                    {sideLabel[s]}
+                  </button>
+                ))}
               </div>
             </div>
           )}
+
+          <div className="quiz-card">
+            <div className="side">{face.promptLabel}</div>
+            <div className="quiz-prompt">{face.prompt}</div>
+
+            <div className="quiz-hint">{face.hint}</div>
+            <div className="type-row">
+              <input
+                key={round}
+                className={`quiz-input${checked ? (lastCorrect ? ' correct' : ' wrong') : ''}`}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (checked ? again() : check())}
+                disabled={checked}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={side === 'reading' ? 'pinyin …' : '…'}
+              />
+              {!checked && (
+                <button
+                  className="type-submit"
+                  disabled={!input.trim()}
+                  onClick={check}
+                  aria-label={t('quiz.check')}
+                  title={t('quiz.check')}
+                >
+                  <ArrowRight size={20} />
+                </button>
+              )}
+            </div>
+
+            {checked && (
+              <div className="quiz-result">
+                <div className={`quiz-verdict${lastCorrect ? ' ok' : ' bad'}`}>
+                  {lastCorrect ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                  {lastCorrect ? t('quiz.correct') : t('quiz.wrong')}
+                </div>
+                {/* The whole card on every reveal — word, reading, meaning — so
+                    the repeat also exposes the sides you weren't asked for. */}
+                <div className="quiz-answer-row">
+                  <div className="quiz-answer-main">
+                    <div className="quiz-answer">{item.term}</div>
+                    {!!item.pinyin && <div className="quiz-answer-pinyin">{item.pinyin}</div>}
+                    {!!item.translation && (
+                      <div className="quiz-answer-trans">{item.translation}</div>
+                    )}
+                  </div>
+                  <SpeakButton text={item.term} locale={locale} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Finish sits beside the repeat, so ending the drill doesn't mean
+              hunting for the close button up in the corner. */}
+          <div className="learn-actions">
+            <button className="answer-btn again learn-finish" onClick={onClose}>
+              <Check size={17} />
+              {t('learn.finish')}
+            </button>
+            {checked ? (
+              <button className="reveal-btn learn-btn" onClick={again}>
+                {t('learn.repeat')}
+              </button>
+            ) : (
+              <button className="answer-btn again learn-btn" onClick={reveal}>
+                {t('quiz.showAnswer')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {checked ? (
-        <button className="reveal-btn" onClick={again}>
-          {t('learn.repeat')}
-        </button>
-      ) : (
-        <div className="answer-row">
-          <button className="answer-btn again" onClick={reveal}>
-            {t('quiz.showAnswer')}
-          </button>
-        </div>
-      )}
+// Decorative backdrop: a dusk sky, a low sun, Fuji, and a seigaiha (wave-crest)
+// band along the bottom — all CSS, so the app stays offline and asset-free.
+function LearnScenery() {
+  return (
+    <div className="learn-scenery" aria-hidden="true">
+      <div className="learn-sun" />
+      <div className="learn-fuji" />
+      <div className="learn-waves" />
     </div>
   );
 }

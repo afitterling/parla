@@ -300,7 +300,11 @@ h1, h2, h3 { margin: 0; }
 .hover-action.learn { color: var(--accent2); }
 .hover-action.delete { color: var(--danger); }
 
-.vocab-inner { display: flex; align-items: center; }
+/* Keep a gutter on the right for the hover strip (Delete, anchored to .row-wrap
+   at top-right). A vocab row's own buttons are vertically centred, so on a short
+   row they sat right under the strip — reserving the space here means they never
+   collide, and nothing shifts when the strip appears. */
+.vocab-inner { display: flex; align-items: center; padding-right: 30px; }
 .vocab-main { flex: 1; min-width: 0; }
 .term { font-size: 17px; font-weight: 700; color: var(--text); }
 .pinyin { color: var(--accent2); font-size: 13px; margin-top: 2px; font-weight: 500; }
@@ -682,6 +686,10 @@ h1, h2, h3 { margin: 0; }
   border: 1px solid var(--accent); background: transparent; color: var(--accent);
 }
 .icon-outline:hover { background: var(--accent-dim); }
+/* Second outline button on the same row (Learn next to Stroke order) — tell them
+   apart by colour rather than by icon alone. */
+.icon-outline.alt { border-color: var(--accent2); color: var(--accent2); }
+.icon-outline.alt:hover { background: var(--accent2-dim); }
 
 /* ── Shared list controls (TaggedList) ─────────────────────────────────────── */
 .list-controls { display: flex; flex-direction: column; gap: 10px; padding: 0 16px; }
@@ -704,24 +712,114 @@ h1, h2, h3 { margin: 0; }
 .quiz-skip input { width: 16px; height: 16px; accent-color: var(--accent); }
 
 /* ── Learn drill (one item, repeated) ─────────────────────────────────────── */
-/* Same full-screen overlay as the WordCard, but the body is the quiz card, so
-   everything below the header reuses the .quiz-* rules above. */
+/* Full-screen overlay like the WordCard, but with a single centered column over
+   a drawn dusk scene. Everything inside the column reuses the .quiz-* rules. */
 .learn-root {
   position: absolute; inset: 0; z-index: 55; display: flex; flex-direction: column;
-  background: var(--bg);
+  background:
+    radial-gradient(120% 90% at 50% 118%, #2b1220 0%, #1a1024 45%, transparent 100%),
+    linear-gradient(180deg, #07070c 0%, #10101c 38%, #1b1430 68%, #2a1732 100%);
 }
-.learn-top { display: flex; align-items: center; gap: 10px; padding: 12px 20px 0; }
+/* 34px down, like .header: the window is titleBarStyle 'hiddenInset', so the
+   traffic lights float over the top-left corner and would swallow clicks on a
+   close button placed any higher. */
+.learn-top {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 10px; padding: 34px 20px 0;
+}
 .learn-title { flex: 1; color: var(--text); font-size: 15px; font-weight: 800; }
 .learn-score { color: var(--success); font-size: 14px; font-weight: 800; }
 .learn-streak { display: inline-flex; align-items: center; gap: 5px; color: var(--accent2); font-size: 14px; font-weight: 800; }
 .learn-streak.cold { color: var(--faint); }
+
+/* The column is centred both ways; `margin: auto` (rather than justify/align
+   center) so a tall card still scrolls from its top instead of being clipped. */
+.learn-stage {
+  position: relative; z-index: 2;
+  flex: 1; display: flex; overflow-y: auto; padding: 20px;
+}
+.learn-col { margin: auto; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 14px; }
+/* The "nothing to practise" state, which renders instead of the stage. */
+.learn-root .train-center { position: relative; z-index: 2; }
+.learn-sides { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.learn-sides-label { color: var(--faint); font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+.learn-col .quiz-setup-row { padding: 0; }
+.learn-actions { display: flex; align-items: stretch; gap: 12px; }
+.learn-btn { margin: 0; flex: 1; }
+.learn-finish { flex: 0 0 auto; padding-left: 22px; padding-right: 22px; }
+
+/* Card sits on the scene: translucent, blurred, so the sun glows through. */
+.learn-root .quiz-card {
+  background: color-mix(in srgb, var(--card) 74%, transparent);
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  backdrop-filter: blur(16px) saturate(1.15);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.learn-root .quiz-input { background: color-mix(in srgb, var(--bg-elev) 80%, transparent); }
+
+/* ── The scene ─────────────────────────────────────────────────────────────
+   Sun, mountain and waves are three stacked layers, drawn with gradients and a
+   clip-path — no image files, so the app stays offline and asset-free. */
+.learn-scenery { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.learn-sun {
+  position: absolute; left: 50%; bottom: 26%; transform: translateX(-50%);
+  width: min(46vh, 420px); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, #ff6b52 0%, #e8443f 58%, #b42f45 100%);
+  opacity: 0.5;
+  filter: blur(0.5px);
+  box-shadow: 0 0 140px 60px rgba(232, 68, 63, 0.22);
+}
+/* Fuji: a gently splayed cone with a snow line, sitting on the horizon. */
+.learn-fuji {
+  position: absolute; left: 50%; bottom: 15%; transform: translateX(-50%);
+  width: min(150vh, 1400px); height: 34vh; min-height: 220px;
+  background: linear-gradient(180deg, #3a2a4a 0%, #241a33 55%, #171126 100%);
+  clip-path: polygon(
+    0% 100%, 30% 42%, 38% 24%, 43% 15%, 46% 12%, 48% 15%, 50% 11%, 52% 15%, 54% 12%,
+    57% 15%, 62% 24%, 70% 42%, 100% 100%
+  );
+}
+.learn-fuji::after {
+  content: ''; position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+  width: 26%; height: 30%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0));
+  clip-path: polygon(
+    50% 0%, 62% 34%, 57% 30%, 54% 46%, 50% 32%, 46% 48%, 43% 30%, 38% 36%
+  );
+}
+/* Seigaiha — interlocking wave crests, the classic two-offset-gradient tiling. */
+.learn-waves {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 22%;
+  --crest: rgba(255, 255, 255, 0.07);
+  background-image:
+    radial-gradient(circle at 50% 100%, transparent 32%, var(--crest) 33%, var(--crest) 35%, transparent 36%,
+      transparent 55%, var(--crest) 56%, var(--crest) 58%, transparent 59%,
+      transparent 78%, var(--crest) 79%, var(--crest) 81%, transparent 82%),
+    radial-gradient(circle at 50% 100%, transparent 32%, var(--crest) 33%, var(--crest) 35%, transparent 36%,
+      transparent 55%, var(--crest) 56%, var(--crest) 58%, transparent 59%,
+      transparent 78%, var(--crest) 79%, var(--crest) 81%, transparent 82%);
+  background-size: 88px 44px;
+  background-position: 0 0, 44px 22px;
+  mask-image: linear-gradient(180deg, transparent, #000 45%);
+}
+
+/* Light theme: the same scene as washi paper at dawn. */
+:root[data-theme='light'] .learn-root {
+  background:
+    radial-gradient(120% 90% at 50% 118%, #ffd9c4 0%, #fdeee2 45%, transparent 100%),
+    linear-gradient(180deg, #fbf7f2 0%, #f7ece3 55%, #f2ded2 100%);
+}
+:root[data-theme='light'] .learn-sun { opacity: 0.32; box-shadow: 0 0 120px 50px rgba(232, 68, 63, 0.14); }
+:root[data-theme='light'] .learn-fuji { background: linear-gradient(180deg, #cbb6c6 0%, #b49fb6 60%, #9d8aa6 100%); }
+:root[data-theme='light'] .learn-waves { --crest: rgba(90, 60, 90, 0.09); }
 
 /* ── WordCard (full-screen lens) ───────────────────────────────────────────── */
 .wordcard-root {
   position: absolute; inset: 0; z-index: 55; display: flex; flex-direction: column;
   background: var(--bg); padding: 0 20px;
 }
-.wordcard-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+/* Same traffic-light clearance as .learn-top / .header. */
+.wordcard-top { display: flex; align-items: center; justify-content: space-between; padding: 34px 0 12px; }
 .wordcard-top-right { display: flex; align-items: center; gap: 10px; }
 .wordcard-icon {
   width: 38px; height: 38px; border-radius: 999px; border: none; cursor: pointer;

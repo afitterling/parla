@@ -11,6 +11,7 @@ import {
   Sparkles,
   RefreshCw,
   Brush,
+  GraduationCap,
 } from 'lucide-react';
 import { Settings, VocabItem, isPaywallActive, recentTags } from '../storage';
 import { exportVocab } from '../export';
@@ -542,13 +543,7 @@ function VocabRow({
   }
 
   return (
-    <Row
-      onDelete={() => onRemove(item.id)}
-      onLearn={onLearn}
-      onTap={() => onOpen(false)}
-      deleteLabel={t('swipe.delete')}
-      learnLabel={t('swipe.learn')}
-    >
+    <Row onDelete={() => onRemove(item.id)} onTap={() => onOpen(false)} deleteLabel={t('swipe.delete')}>
       <div className="vocab-inner">
         <div className="vocab-main">
           <div className="term">{item.term}</div>
@@ -565,6 +560,19 @@ function VocabRow({
           )}
           <TagBadges tags={item.tags} />
         </div>
+        {/* Drilling one word is a main action, so it's a button on the row
+            itself rather than something you have to hover to find. */}
+        <button
+          className="icon-outline alt"
+          onClick={(e) => {
+            e.stopPropagation();
+            onLearn();
+          }}
+          aria-label={t('swipe.learn')}
+          title={t('swipe.learn')}
+        >
+          <GraduationCap size={17} />
+        </button>
         {canStrokes && (
           <button
             className="icon-outline"
