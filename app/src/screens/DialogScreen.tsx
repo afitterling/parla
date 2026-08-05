@@ -17,8 +17,11 @@ import { useStyles, useTheme } from '../ThemeContext';
 import {
   FREE_PER_HOUR,
   isPaywallActive,
+  loadPinned,
   PhraseItem,
+  PinnedMsg,
   recordUsage,
+  savePinned,
   Settings,
   usageInLastHour,
   VocabItem,
@@ -48,6 +51,9 @@ type Msg = {
   pinyin?: string;
   translation?: string;
   vocab?: VocabSuggestion[];
+  // Re-shown from a previous session's pins — displayed, but not part of the
+  // live conversation sent to the model.
+  restored?: boolean;
 };
 
 type Props = {
@@ -106,6 +112,61 @@ export function DialogScreen({
   const recorder = useRecorder();
   // Remaining free-tier quota this hour; null = unlimited (dev env or Pro).
   const [quotaLeft, setQuotaLeft] = useState<number | null>(null);
+  // Pinned cards — persisted, restored into the dialog on every mount (the
+  // dialog itself is ephemeral: it resets on tab switches and app restarts).
+  const [pins, setPins] = useState<PinnedMsg[]>([]);
+  const pinnedIds = new Set(pins.map((p) => p.id));
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const stored = await loadPinned();
+      if (!active) return;
+      setPins(stored);
+      setMessages((prev) =>
+        prev.length > 0
+          ? prev
+          : [...stored]
+              .sort((a, b) => a.createdAt - b.createdAt)
+              .map((p) => ({
+                id: p.id,
+                role: p.role,
+                text: p.text,
+                pinyin: p.pinyin,
+                translation: p.translation,
+                vocab: p.vocab,
+                restored: true,
+              }))
+      );
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function togglePin(m: Msg) {
+    setPins((prev) => {
+      const has = prev.some((p) => p.id === m.id);
+      const next = has
+        ? prev.filter((p) => p.id !== m.id)
+        : [
+            ...prev,
+            {
+              id: m.id,
+              role: m.role,
+              text: m.text,
+              pinyin: m.pinyin,
+              translation: m.translation,
+              vocab: m.vocab,
+              lang: goalLang.code,
+              inputLang: inputLang.code,
+              createdAt: Date.now(),
+            },
+          ];
+      savePinned(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -131,7 +192,7 @@ export function DialogScreen({
   }
 
   function toHistory(msgs: Msg[]): ChatTurn[] {
-    return msgs.map((m) => ({
+    return msgs.filter((m) => !m.restored).map((m) => ({
       role: m.role === 'ai' ? 'assistant' : 'user',
       content: m.text,
     }));
@@ -188,7 +249,8 @@ export function DialogScreen({
   }
 
   async function startConversation() {
-    setMessages([]);
+    // Keep the restored pinned cards visible — only the live turns reset.
+    setMessages((prev) => prev.filter((m) => m.restored));
     await askAI([]);
   }
 
@@ -403,10 +465,16 @@ export function DialogScreen({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {messages.length === 0 && (
-          <View style={styles.empty}>
-            <Ionicons name="mic-outline" size={56} color={theme.colors.accent} />
-            <Text style={styles.emptyTitle}>{t('dialog.readyTitle')}</Text>
+        {messages.every((m) => m.restored) && (
+          // No live conversation yet. With restored pinned cards present, a
+          // compact variant keeps the start button reachable without the hero.
+          <View style={[styles.empty, messages.length > 0 && styles.emptyCompact]}>
+            {messages.length === 0 && (
+              <>
+                <Ionicons name="mic-outline" size={56} color={theme.colors.accent} />
+                <Text style={styles.emptyTitle}>{t('dialog.readyTitle')}</Text>
+              </>
+            )}
             <Text style={styles.emptyText}>
               {mode === 'ask'
                 ? t('dialog.readyAsk', { goal: goalLang.nativeName, input: inputLang.nativeName })
@@ -435,9 +503,18 @@ export function DialogScreen({
               onSetPinyin={(pinyin) =>
                 setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, pinyin } : x)))
               }
+              pinned={pinnedIds.has(m.id)}
+              onTogglePin={() => togglePin(m)}
             />
           ) : (
-            <UserBubble key={m.id} msg={m} onSave={saveTranscription} saved={saved.has(m.text)} />
+            <UserBubble
+              key={m.id}
+              msg={m}
+              onSave={saveTranscription}
+              saved={saved.has(m.text)}
+              pinned={pinnedIds.has(m.id)}
+              onTogglePin={() => togglePin(m)}
+            />
           )
         )}
 
@@ -529,6 +606,8 @@ function AiBubble({
   tagSuggestions,
   openaiKey,
   onSetPinyin,
+  pinned,
+  onTogglePin,
 }: {
   msg: Msg;
   onSaveVocab: (s: VocabSuggestion) => void;
@@ -541,6 +620,8 @@ function AiBubble({
   tagSuggestions: string[];
   openaiKey: string;
   onSetPinyin: (pinyin: string) => void;
+  pinned: boolean;
+  onTogglePin: () => void;
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
@@ -621,7 +702,10 @@ function AiBubble({
 
   return (
     <View style={[styles.bubble, styles.aiBubble]}>
-      <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
+      <View style={styles.bubbleHeader}>
+        <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
+        <PinButton pinned={pinned} onPress={onTogglePin} />
+      </View>
       <Text style={styles.aiText}>{msg.text}</Text>
       {msg.pinyin ? (
         <Text style={styles.pinyin}>{msg.pinyin}</Text>
@@ -777,21 +861,46 @@ function AiBubble({
   );
 }
 
+function PinButton({ pinned, onPress }: { pinned: boolean; onPress: () => void }) {
+  const t = useT();
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={10}
+      accessibilityLabel={pinned ? t('dialog.unpin') : t('dialog.pin')}
+    >
+      <Ionicons
+        name={pinned ? 'pin' : 'pin-outline'}
+        size={16}
+        color={pinned ? theme.colors.accent : theme.colors.textFaint}
+      />
+    </Pressable>
+  );
+}
+
 function UserBubble({
   msg,
   onSave,
   saved,
+  pinned,
+  onTogglePin,
 }: {
   msg: Msg;
   onSave: (text: string) => void;
   saved: boolean;
+  pinned: boolean;
+  onTogglePin: () => void;
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   return (
     <View style={[styles.bubble, styles.userBubble]}>
-      <Text style={styles.userLabel}>{t('bubble.you')}</Text>
+      <View style={styles.bubbleHeader}>
+        <PinButton pinned={pinned} onPress={onTogglePin} />
+        <Text style={styles.userLabel}>{t('bubble.you')}</Text>
+      </View>
       <Text style={styles.userText}>{msg.text}</Text>
       <Pressable
         onPress={() => !saved && onSave(msg.text)}
@@ -884,6 +993,7 @@ function makeStyles(theme: Theme) {
   scrollContent: { padding: 16, paddingBottom: 24, gap: 12 },
 
   empty: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 24 },
+  emptyCompact: { paddingTop: 4, paddingBottom: 8 },
   emptyEmoji: { fontSize: 56 },
   emptyTitle: { color: theme.colors.text, fontSize: 20, fontWeight: '800', marginTop: 12 },
   emptyText: {
@@ -917,13 +1027,19 @@ function makeStyles(theme: Theme) {
     alignSelf: 'flex-end',
     borderTopRightRadius: 4,
   },
-  aiLabel: { color: theme.colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  bubbleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 4,
+  },
+  aiLabel: { color: theme.colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   userLabel: {
     color: theme.colors.accent2,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1,
-    marginBottom: 4,
     textAlign: 'right',
   },
   aiText: { color: theme.colors.text, fontSize: 18, lineHeight: 26, fontWeight: '600' },

@@ -28,6 +28,28 @@ export type PhraseItem = {
   known: number; // how often marked "gewusst"
 };
 
+// A dialog card the learner pinned so it survives across sessions — the dialog
+// itself is ephemeral (state only), pinned cards are restored on the next
+// launch. Mirrors the dialog Msg shape plus the language pair and sync fields.
+export type PinnedMsg = {
+  id: string;
+  role: 'user' | 'ai';
+  text: string;
+  pinyin?: string;
+  translation?: string;
+  vocab?: {
+    term: string;
+    pinyin?: string;
+    translation: string;
+    example?: string;
+    examplePinyin?: string;
+    exampleTranslation?: string;
+  }[];
+  lang: string; // goal language of the conversation when pinned
+  inputLang: string;
+  createdAt: number; // when pinned — keeps the restore order stable
+};
+
 // An input→goal language combination the learner has actually saved content
 // into. Kept in most-recently-used order so the header menu can offer a quick
 // switch back to a pair worked on before.
@@ -100,6 +122,7 @@ export type Settings = {
 // File names match the desktop app so both platforms read/write the same files.
 const VOCAB_FILE = 'vocab.json';
 const PHRASE_FILE = 'phrases.json';
+const PINNED_FILE = 'pinned.json';
 const SETTINGS_FILE = 'settings.json';
 const USAGE_FILE = 'usage.json';
 
@@ -125,7 +148,8 @@ async function readCloud(file: string): Promise<string | null> {
 async function readLocal(file: string): Promise<string | null> {
   const mirror = await AsyncStorage.getItem(mirrorKey(file));
   if (mirror != null) return mirror;
-  return AsyncStorage.getItem(LEGACY_KEYS[file]);
+  const legacy = LEGACY_KEYS[file];
+  return legacy ? AsyncStorage.getItem(legacy) : null;
 }
 
 // First non-empty of iCloud → mirror → legacy. Used for single-value files
@@ -243,6 +267,29 @@ export async function loadPhrases(): Promise<PhraseItem[]> {
 
 export async function savePhrases(items: PhraseItem[]): Promise<void> {
   await writeRaw(PHRASE_FILE, JSON.stringify(items));
+}
+
+function normalizePinned(items: any[]): PinnedMsg[] {
+  return items
+    .filter((m) => m && typeof m.id === 'string' && typeof m.text === 'string')
+    .map((m) => ({
+      ...m,
+      role: m.role === 'user' ? 'user' : 'ai',
+      vocab: Array.isArray(m.vocab) ? m.vocab : undefined,
+      createdAt: Number(m.createdAt) || 0,
+    })) as PinnedMsg[];
+}
+
+export async function loadPinned(): Promise<PinnedMsg[]> {
+  const cloud = normalizePinned(parseArray(await readCloud(PINNED_FILE)));
+  const local = normalizePinned(parseArray(await readLocal(PINNED_FILE)));
+  const merged = mergeById(cloud, local);
+  await reconcile(PINNED_FILE, merged, cloud.length);
+  return merged;
+}
+
+export async function savePinned(items: PinnedMsg[]): Promise<void> {
+  await writeRaw(PINNED_FILE, JSON.stringify(items));
 }
 
 // Distinct tags ordered by most recent use (newest item that carries them
