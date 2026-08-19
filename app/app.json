@@ -2,7 +2,7 @@
   "expo": {
     "name": "Parla",
     "slug": "sprachapp",
-    "version": "1.0.0",
+    "version": "0.9.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -31,8 +31,8 @@
           "iCloud.com.afitterling.sprachapp"
         ]
       },
-      "bundleIdentifier": "com.afitterling.sprachapp",
-      "buildNumber": "2"
+      "bundleIdentifier": "tech.sp33c.parla.dev",
+      "buildNumber": "24"
     },
     "android": {
       "adaptiveIcon": {

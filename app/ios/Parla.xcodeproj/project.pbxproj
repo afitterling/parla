@@ -358,7 +358,7 @@
 				CODE_SIGN_ENTITLEMENTS = Parla/Parla.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = Q2ZG8FQS59;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -372,14 +372,14 @@
 					"@executable_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.4;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 0.9.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.afitterling.sprachapp;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.sp33c.parla.dev;
 				PRODUCT_NAME = Parla;
 				SWIFT_OBJC_BRIDGING_HEADER = "Parla/Parla-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -398,7 +398,7 @@
 				CODE_SIGN_ENTITLEMENTS = Parla/Parla.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = Q2ZG8FQS59;
 				INFOPLIST_FILE = Parla/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
@@ -407,14 +407,14 @@
 					"@executable_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.4;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 0.9.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.afitterling.sprachapp;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.sp33c.parla.dev;
 				PRODUCT_NAME = Parla;
 				SWIFT_OBJC_BRIDGING_HEADER = "Parla/Parla-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

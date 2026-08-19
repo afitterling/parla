@@ -32,6 +32,8 @@
     "ios": "dotenv -e .env.dev -- expo start --ios",
     "web": "dotenv -e .env.dev -- expo start --web",
     "setVersion": "./scripts/setVersion.sh",
+    "setBundleId": "./scripts/setBundleId.sh",
+    "testflight": "./scripts/testflight.sh",
     "xcode": "./scripts/run-xcode.sh",
     "release": "./scripts/release-device.sh"
   },
