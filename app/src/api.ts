@@ -20,14 +20,65 @@ function linkSignals(external: AbortSignal | undefined, timeoutMs: number) {
   };
 }
 
-// ── Whisper (OpenAI) transcription ───────────────────────────────────────────
-// Speech-to-text runs through OpenAI's Whisper. We use expo-file-system's native
-// File.upload() (multipart, NSURLSession-backed). This avoids two SDK 56 traps:
-// the WinterCG fetch rejects RN's {uri,name,type} FormData part ("Unsupported
-// FormDataPart") and also fails on a File/Blob body ("request failed"); legacy
-// uploadAsync hangs. The native upload takes an AbortSignal so the 30s timeout
-// actually cancels the request. We also surface the recording size and the HTTP
-// status/body so failures are diagnosable instead of a silent hang.
+// ── Speech-to-text robustness ────────────────────────────────────────────────
+// Tried in order. gpt-4o-transcribe is OpenAI's successor to Whisper on the
+// same endpoint and is noticeably steadier on background noise, accents and
+// fast speech; whisper-1 stays behind it so keys/orgs without access to the
+// newer model keep working. Same price per minute, so the fallback is only
+// ever about availability.
+const STT_MODELS = ['gpt-4o-transcribe', 'whisper-1'];
+
+// A 400/403/404 that talks about the model means "not available to this key" —
+// worth trying the next one. Anything else is a real error and must surface.
+function isModelUnavailable(status: number, message: string): boolean {
+  return (status === 400 || status === 403 || status === 404) && /model/i.test(message);
+}
+
+// The Whisper family is trained on subtitle corpora, so audio that is mostly
+// room noise tends to come back as a caption artefact — a subtitle credit, a
+// "thanks for watching", a music marker — rather than as nothing. None of that
+// is ever someone talking into Parla, so drop it and let the caller show its
+// "nothing understood" message instead of writing junk into a card. Kept
+// deliberately narrow: short polite phrases ("Danke", "Thank you") are real
+// input in a language app and must survive.
+const NOISE_ARTEFACTS = [
+  /amara\.?\s?org/i,
+  /untertitel(ung)?\s*(im auftrag|von|des|durch|:)/i,
+  /subtitle[sd]?\s*(by|from|:)/i,
+  /sous-titr(es|age)\s*(par|réalisés|:)/i,
+  /sottotitoli\s*(e revisione\s*)?(a cura|di|:)/i,
+  /subt[íi]tulos\s*(realizados|por|:)/i,
+  /legendas\s*(pela|por|:)/i,
+  /субтитры\s*(сделал|подготовил|создавал|:)/i,
+  /thanks? for watching/i,
+  /merci d'avoir regard/i,
+  /gracias por ver/i,
+  /ご視聴ありがとうございました/,
+  /字幕(由|提供|志愿者)/,
+  /请不吝点赞/,
+  /구독과?\s*좋아요/,
+];
+
+// Strip bracketed sound annotations ("[Musik]", "(soft music)", "（音楽）") and
+// decide whether anything spoken is left at all.
+function cleanTranscript(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const spoken = trimmed.replace(/[[(（【][^\])）】]*[\])）】]/g, '').trim();
+  if (!spoken || /^[\s♪♫•·*~\-–—_.,!?…"'`]+$/u.test(spoken)) return '';
+  if (NOISE_ARTEFACTS.some((re) => re.test(trimmed))) return '';
+  return trimmed;
+}
+
+// ── OpenAI transcription ─────────────────────────────────────────────────────
+// Speech-to-text runs on OpenAI's audio/transcriptions endpoint. We use
+// expo-file-system's native File.upload() (multipart, NSURLSession-backed).
+// This avoids two SDK 56 traps: the WinterCG fetch rejects RN's
+// {uri,name,type} FormData part ("Unsupported FormDataPart") and also fails on
+// a File/Blob body ("request failed"); legacy uploadAsync hangs. The native
+// upload takes an AbortSignal so the 30s timeout actually cancels the request.
+// We also surface the recording size and the HTTP status/body so failures are
+// diagnosable instead of a silent hang.
 export async function transcribeAudio(
   uri: string,
   openaiKey: string,
@@ -43,49 +94,60 @@ export async function transcribeAudio(
   }
 
   let lastErr: any = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) throw new Error('Abgebrochen.');
-    const { signal: s, done } = linkSignals(signal, 60000);
-    let res;
-    try {
-      res = await file.upload('https://api.openai.com/v1/audio/transcriptions', {
-        httpMethod: 'POST',
-        uploadType: UploadType.MULTIPART,
-        fieldName: 'file',
-        mimeType: 'audio/m4a',
-        parameters: { model: 'whisper-1', language: lang.whisper },
-        headers: { Authorization: `Bearer ${openaiKey}` },
-        // Force an immediate foreground upload — the default 'background'
-        // NSURLSession defers the transfer, which makes the request appear to
-        // hang and then hit the 30s timeout.
-        sessionType: 'foreground',
-        signal: s,
-      });
-    } catch (e: any) {
-      done();
-      lastErr = e;
+  models: for (const model of STT_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       if (signal?.aborted) throw new Error('Abgebrochen.');
-      if (e?.name === 'AbortError') break; // internal timeout → stop
-      continue; // transient network error → retry once
+      const { signal: s, done } = linkSignals(signal, 60000);
+      let res;
+      try {
+        res = await file.upload('https://api.openai.com/v1/audio/transcriptions', {
+          httpMethod: 'POST',
+          uploadType: UploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: 'audio/m4a',
+          parameters: { model, language: lang.whisper },
+          headers: { Authorization: `Bearer ${openaiKey}` },
+          // Force an immediate foreground upload — the default 'background'
+          // NSURLSession defers the transfer, which makes the request appear to
+          // hang and then hit the 30s timeout.
+          sessionType: 'foreground',
+          signal: s,
+        });
+      } catch (e: any) {
+        done();
+        lastErr = e;
+        if (signal?.aborted) throw new Error('Abgebrochen.');
+        if (e?.name === 'AbortError') break models; // internal timeout → stop
+        continue; // transient network error → retry once
+      }
+      done();
+      let data: any = {};
+      try {
+        data = JSON.parse(res.body);
+      } catch {
+        // non-JSON body handled below
+      }
+      if (res.status < 200 || res.status >= 300) {
+        const msg =
+          data?.error?.message ||
+          `Transkriptions-Fehler ${res.status}: ${String(res.body).slice(0, 120)}`;
+        if (isModelUnavailable(res.status, msg)) {
+          lastErr = Object.assign(new Error(msg), { modelUnavailable: true });
+          continue models; // key has no access to this model → try the next
+        }
+        throw new Error(msg);
+      }
+      return cleanTranscript(data.text ?? '');
     }
-    done();
-    let data: any = {};
-    try {
-      data = JSON.parse(res.body);
-    } catch {
-      // non-JSON body handled below
-    }
-    if (res.status < 200 || res.status >= 300) {
-      throw new Error(
-        data?.error?.message || `Whisper-Fehler ${res.status}: ${String(res.body).slice(0, 120)}`
-      );
-    }
-    return (data.text ?? '').trim();
+    // Both attempts died on the network — another model will not fix that.
+    break;
   }
+  if (lastErr?.name === 'AbortError') {
+    throw new Error('Transkriptions-Timeout (60s) — nochmal versuchen oder abbrechen.');
+  }
+  // Every model was refused — show why instead of blaming the network.
   throw new Error(
-    lastErr?.name === 'AbortError'
-      ? 'Whisper-Timeout (60s) — nochmal versuchen oder abbrechen.'
-      : 'Netzwerkfehler — bitte nochmal versuchen.'
+    lastErr?.modelUnavailable ? lastErr.message : 'Netzwerkfehler — bitte nochmal versuchen.'
   );
 }
 

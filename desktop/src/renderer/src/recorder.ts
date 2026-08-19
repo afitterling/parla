@@ -11,7 +11,21 @@ export function useRecorder() {
   const streamRef = useRef<MediaStream | null>(null);
 
   async function start(): Promise<void> {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Ask Chromium's capture pipeline for the WebRTC voice path: noise
+    // suppression and AGC strip steady background noise (fans, traffic, café
+    // hum) and lift a quiet speaker before the audio is ever encoded, and echo
+    // cancellation keeps our own TTS playback out of the recording. Mono at
+    // 16 kHz matches what Whisper resamples to, so room ambience above 8 kHz is
+    // filtered on-device instead of being uploaded.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 16000,
+      },
+    });
     streamRef.current = stream;
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'

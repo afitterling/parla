@@ -19,7 +19,57 @@ function linkSignals(external: AbortSignal | undefined, timeoutMs: number) {
   };
 }
 
-// ── Whisper (OpenAI) transcription ───────────────────────────────────────────
+// ── Speech-to-text robustness ────────────────────────────────────────────────
+// Tried in order. gpt-4o-transcribe is OpenAI's successor to Whisper on the
+// same endpoint and is noticeably steadier on background noise, accents and
+// fast speech; whisper-1 stays behind it so keys/orgs without access to the
+// newer model keep working. Same price per minute, so the fallback is only
+// ever about availability.
+const STT_MODELS = ['gpt-4o-transcribe', 'whisper-1'];
+
+// A 400/403/404 that talks about the model means "not available to this key" —
+// worth trying the next one. Anything else is a real error and must surface.
+function isModelUnavailable(status: number, message: string): boolean {
+  return (status === 400 || status === 403 || status === 404) && /model/i.test(message);
+}
+
+// The Whisper family is trained on subtitle corpora, so audio that is mostly
+// room noise tends to come back as a caption artefact — a subtitle credit, a
+// "thanks for watching", a music marker — rather than as nothing. None of that
+// is ever someone talking into Parla, so drop it and let the caller show its
+// "nothing understood" message instead of writing junk into a card. Kept
+// deliberately narrow: short polite phrases ("Danke", "Thank you") are real
+// input in a language app and must survive.
+const NOISE_ARTEFACTS = [
+  /amara\.?\s?org/i,
+  /untertitel(ung)?\s*(im auftrag|von|des|durch|:)/i,
+  /subtitle[sd]?\s*(by|from|:)/i,
+  /sous-titr(es|age)\s*(par|réalisés|:)/i,
+  /sottotitoli\s*(e revisione\s*)?(a cura|di|:)/i,
+  /subt[íi]tulos\s*(realizados|por|:)/i,
+  /legendas\s*(pela|por|:)/i,
+  /субтитры\s*(сделал|подготовил|создавал|:)/i,
+  /thanks? for watching/i,
+  /merci d'avoir regard/i,
+  /gracias por ver/i,
+  /ご視聴ありがとうございました/,
+  /字幕(由|提供|志愿者)/,
+  /请不吝点赞/,
+  /구독과?\s*좋아요/,
+];
+
+// Strip bracketed sound annotations ("[Musik]", "(soft music)", "（音楽）") and
+// decide whether anything spoken is left at all.
+function cleanTranscript(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const spoken = trimmed.replace(/[[(（【][^\])）】]*[\])）】]/g, '').trim();
+  if (!spoken || /^[\s♪♫•·*~\-–—_.,!?…"'`]+$/u.test(spoken)) return '';
+  if (NOISE_ARTEFACTS.some((re) => re.test(trimmed))) return '';
+  return trimmed;
+}
+
+// ── OpenAI transcription ─────────────────────────────────────────────────────
 // In Electron (Chromium, webSecurity off) a standard multipart fetch with a
 // Blob body works directly — none of the WinterCG/FormData quirks the mobile
 // build hits. Takes an AbortSignal so the 60s timeout (or a user cancel) can
@@ -38,40 +88,51 @@ export async function transcribeAudio(
   const ext = blob.type.includes('webm') ? 'webm' : blob.type.includes('mp4') ? 'mp4' : 'ogg';
 
   let lastErr: any = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) throw new Error('Abgebrochen.');
-    const form = new FormData();
-    form.append('file', blob, `audio.${ext}`);
-    form.append('model', 'whisper-1');
-    form.append('language', lang.whisper);
-
-    const { signal: s, done } = linkSignals(signal, 60000);
-    let res: Response;
-    try {
-      res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${openaiKey}` },
-        body: form,
-        signal: s,
-      });
-    } catch (e: any) {
-      done();
-      lastErr = e;
+  models: for (const model of STT_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       if (signal?.aborted) throw new Error('Abgebrochen.');
-      if (e?.name === 'AbortError') break; // internal timeout → stop
-      continue; // transient network error → retry once
+      const form = new FormData();
+      form.append('file', blob, `audio.${ext}`);
+      form.append('model', model);
+      form.append('language', lang.whisper);
+
+      const { signal: s, done } = linkSignals(signal, 60000);
+      let res: Response;
+      try {
+        res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openaiKey}` },
+          body: form,
+          signal: s,
+        });
+      } catch (e: any) {
+        done();
+        lastErr = e;
+        if (signal?.aborted) throw new Error('Abgebrochen.');
+        if (e?.name === 'AbortError') break models; // internal timeout → stop
+        continue; // transient network error → retry once
+      }
+      done();
+      const data = await res.json().catch(() => ({}) as any);
+      if (!res.ok) {
+        const msg = data?.error?.message || `Transkriptions-Fehler (${res.status})`;
+        if (isModelUnavailable(res.status, msg)) {
+          lastErr = Object.assign(new Error(msg), { modelUnavailable: true });
+          continue models; // key has no access to this model → try the next
+        }
+        throw new Error(msg);
+      }
+      return cleanTranscript(data.text ?? '');
     }
-    done();
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error?.message || `Whisper-Fehler (${res.status})`);
-    }
-    return (data.text ?? '').trim();
+    // Both attempts died on the network — another model will not fix that.
+    break;
   }
+  if (lastErr?.name === 'AbortError') {
+    throw new Error('Transkriptions-Timeout (60s) — nochmal versuchen oder abbrechen.');
+  }
+  // Every model was refused — show why instead of blaming the network.
   throw new Error(
-    lastErr?.name === 'AbortError'
-      ? 'Whisper-Timeout (60s) — nochmal versuchen oder abbrechen.'
-      : 'Netzwerkfehler — bitte nochmal versuchen.'
+    lastErr?.modelUnavailable ? lastErr.message : 'Netzwerkfehler — bitte nochmal versuchen.'
   );
 }
 
