@@ -157,6 +157,11 @@ h1, h2, h3 { margin: 0; }
 .bubble.ai { background: var(--card); align-self: flex-start; border-top-left-radius: 4px; }
 .bubble.user { background: var(--accent2-dim); border-color: var(--accent2); align-self: flex-end; border-top-right-radius: 4px; }
 .b-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
+/* Label + read-aloud on one line; the label keeps its own margin off in here. */
+.b-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.b-head .b-label { margin-bottom: 0; }
+.b-head .b-label.user { margin-left: auto; }
+.b-speak { width: 28px; height: 28px; }
 .b-label.ai { color: var(--accent); }
 .b-label.user { color: var(--accent2); text-align: right; }
 .b-target { font-size: 18px; line-height: 1.45; font-weight: 600; }

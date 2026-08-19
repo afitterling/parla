@@ -26,11 +26,12 @@ import {
   usageInLastHour,
   VocabItem,
 } from '../storage';
-import { findLanguage } from '../languages';
+import { findLanguage, speechLocale } from '../languages';
 import { useRecorder } from '../useRecorder';
 import { Paywall } from '../components/Paywall';
 import { BusyOverlay } from '../components/BusyOverlay';
 import { LanguagePicker } from '../components/LanguagePicker';
+import { SpeakButton } from '../components/SpeakButton';
 import { useT } from '../i18n/I18nContext';
 import {
   breakdownSentence,
@@ -514,6 +515,7 @@ export function DialogScreen({
               saved={saved.has(m.text)}
               pinned={pinnedIds.has(m.id)}
               onTogglePin={() => togglePin(m)}
+              speakLocale={mode === 'free' ? speechLocale(goalLang) : undefined}
             />
           )
         )}
@@ -704,7 +706,17 @@ function AiBubble({
     <View style={[styles.bubble, styles.aiBubble]}>
       <View style={styles.bubbleHeader}>
         <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
-        <PinButton pinned={pinned} onPress={onTogglePin} />
+        <View style={styles.bubbleActions}>
+          {/* Read the reply aloud in the goal language — same device TTS the
+              Vocabulary and Phrases rows use. */}
+          <SpeakButton
+            text={msg.text}
+            locale={speechLocale(findLanguage(langCode))}
+            size={14}
+            style={styles.bubbleSpeak}
+          />
+          <PinButton pinned={pinned} onPress={onTogglePin} />
+        </View>
       </View>
       <Text style={styles.aiText}>{msg.text}</Text>
       {msg.pinyin ? (
@@ -885,12 +897,16 @@ function UserBubble({
   saved,
   pinned,
   onTogglePin,
+  speakLocale,
 }: {
   msg: Msg;
   onSave: (text: string) => void;
   saved: boolean;
   pinned: boolean;
   onTogglePin: () => void;
+  /** Set only when the learner's own text is in the goal language (free mode) —
+      hearing your own native sentence back is noise. */
+  speakLocale?: string;
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
@@ -898,7 +914,17 @@ function UserBubble({
   return (
     <View style={[styles.bubble, styles.userBubble]}>
       <View style={styles.bubbleHeader}>
-        <PinButton pinned={pinned} onPress={onTogglePin} />
+        <View style={styles.bubbleActions}>
+          <PinButton pinned={pinned} onPress={onTogglePin} />
+          {!!speakLocale && (
+            <SpeakButton
+              text={msg.text}
+              locale={speakLocale}
+              size={14}
+              style={styles.bubbleSpeak}
+            />
+          )}
+        </View>
         <Text style={styles.userLabel}>{t('bubble.you')}</Text>
       </View>
       <Text style={styles.userText}>{msg.text}</Text>
@@ -1034,6 +1060,9 @@ function makeStyles(theme: Theme) {
     gap: 12,
     marginBottom: 4,
   },
+  bubbleActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // Shrinks SpeakButton's default 38pt disc to something that sits in a header row.
+  bubbleSpeak: { width: 28, height: 28 },
   aiLabel: { color: theme.colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   userLabel: {
     color: theme.colors.accent2,
