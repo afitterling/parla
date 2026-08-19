@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,6 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
 import { Settings } from '../storage';
+import { exportBackup, importBackup } from '../backup';
 import { findLanguage } from '../languages';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
@@ -34,6 +37,8 @@ type Props = {
   setEmergencyEnabled: (value: boolean) => void;
   purchasePro: () => void;
   restorePurchases: () => void;
+  /** Re-read the stores after an import replaced what is on disk. */
+  onImported: () => void;
 };
 
 export function SettingsScreen({
@@ -49,6 +54,7 @@ export function SettingsScreen({
   setEmergencyEnabled,
   purchasePro,
   restorePurchases,
+  onImported,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -56,6 +62,7 @@ export function SettingsScreen({
   const [picker, setPicker] = useState<'input' | 'learn' | null>(null);
   const [uiLangOpen, setUiLangOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [backupBusy, setBackupBusy] = useState<'export' | 'import' | null>(null);
 
   // App / build info — baked in from app.json at build time (see scripts/setVersion.sh).
   const appVersion = Constants.expoConfig?.version ?? '—';
@@ -68,6 +75,32 @@ export function SettingsScreen({
     { label: 'Bundle', value: String(bundleId) },
     { label: 'System', value: systemInfo },
   ];
+
+  async function runExport() {
+    setBackupBusy('export');
+    try {
+      await exportBackup(t('backup.shareTitle'));
+    } catch (e: any) {
+      Alert.alert(t('settings.backup'), e?.message ?? String(e));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
+
+  async function runImport() {
+    setBackupBusy('import');
+    try {
+      const added = await importBackup(t('backup.invalid'));
+      if (added) {
+        onImported();
+        Alert.alert(t('settings.backup'), t('backup.imported', added));
+      }
+    } catch (e: any) {
+      Alert.alert(t('settings.backup'), e?.message ?? String(e));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
 
   async function copyDebug() {
     await Clipboard.setStringAsync(debugRows.map((r) => `${r.label}: ${r.value}`).join('\n'));
@@ -224,6 +257,29 @@ export function SettingsScreen({
           </Pressable>
 
           <Text style={styles.hint}>{t('settings.proHint')}</Text>
+        </View>
+
+        <Text style={styles.sectionLabel}>{t('settings.backup').toUpperCase()}</Text>
+        <View style={styles.card}>
+          <Pressable
+            style={styles.primaryBtn}
+            onPress={runExport}
+            disabled={backupBusy !== null}
+          >
+            {backupBusy === 'export' ? (
+              <ActivityIndicator size="small" color="#001b1f" />
+            ) : (
+              <Text style={styles.primaryBtnText}>{t('settings.exportBackup')}</Text>
+            )}
+          </Pressable>
+          <Pressable style={styles.textBtn} onPress={runImport} disabled={backupBusy !== null}>
+            {backupBusy === 'import' ? (
+              <ActivityIndicator size="small" color={theme.colors.accent} />
+            ) : (
+              <Text style={styles.textBtnText}>{t('settings.importBackup')}</Text>
+            )}
+          </Pressable>
+          <Text style={styles.hint}>{t('settings.backupHint')}</Text>
         </View>
 
         <Text style={styles.sectionLabel}>{t('settings.about').toUpperCase()}</Text>

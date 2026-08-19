@@ -63,12 +63,18 @@ export default function App() {
     lockPortrait();
   }, []);
 
+  // Pull every store back into state. Runs on launch, and again after a backup
+  // import has written new content underneath us.
+  async function reloadStores() {
+    const [s, v, p] = await Promise.all([loadSettings(), loadVocab(), loadPhrases()]);
+    setSettings(s);
+    setVocab(v);
+    setPhrases(p);
+  }
+
   useEffect(() => {
     (async () => {
-      const [s, v, p] = await Promise.all([loadSettings(), loadVocab(), loadPhrases()]);
-      setSettings(s);
-      setVocab(v);
-      setPhrases(p);
+      await reloadStores();
       setReady(true);
     })();
   }, []);
@@ -404,6 +410,7 @@ export default function App() {
             setPro={setPro}
             purchasePro={purchasePro}
             restorePurchases={restorePurchases}
+            onImported={reloadStores}
           />
         )}
       </View>

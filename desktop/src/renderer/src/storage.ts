@@ -189,7 +189,7 @@ function filledCount(o: Record<string, unknown>): number {
 // Union two record lists by id; on a clash keep the copy with more filled fields.
 // Never drops an item that exists on either side, so offline edits on either the
 // phone or the Mac survive a sync.
-function mergeById<T extends { id: string; createdAt?: number }>(a: T[], b: T[]): T[] {
+export function mergeById<T extends { id: string; createdAt?: number }>(a: T[], b: T[]): T[] {
   const map = new Map<string, T>();
   for (const it of a) if (it?.id) map.set(it.id, it);
   for (const it of b) {

@@ -31,8 +31,8 @@
           "iCloud.com.afitterling.sprachapp"
         ]
       },
-      "bundleIdentifier": "tech.sp33c.parla.dev",
-      "buildNumber": "24"
+      "bundleIdentifier": "com.afitterling.sprachapp",
+      "buildNumber": "25"
     },
     "android": {
       "adaptiveIcon": {
