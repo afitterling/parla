@@ -17,11 +17,13 @@ import { useStyles, useTheme } from '../ThemeContext';
 import {
   FREE_PER_HOUR,
   isPaywallActive,
+  DialogMsg,
   loadPinned,
+  loadRecentDialog,
   PhraseItem,
-  PinnedMsg,
   recordUsage,
   savePinned,
+  saveRecentDialog,
   Settings,
   usageInLastHour,
   VocabItem,
@@ -49,11 +51,13 @@ type Msg = {
   id: string;
   role: 'user' | 'ai';
   text: string;
+  createdAt: number;
   pinyin?: string;
   translation?: string;
   vocab?: VocabSuggestion[];
-  // Re-shown from a previous session's pins — displayed, but not part of the
-  // live conversation sent to the model.
+  // Re-shown from a previous session (pinned card or recent-history window).
+  // Still part of the conversation sent to the model — restoring is what lets
+  // the dialog continue rather than start over.
   restored?: boolean;
 };
 
@@ -66,6 +70,7 @@ type Props = {
   onChangeGoalLanguage: (code: string) => void;
   onSwapLanguages: () => void;
   onPurchasePro: () => void;
+  setDialogSort: (order: 'asc' | 'desc') => void;
   tagSuggestions: string[];
   contentLangCodes: string[]; // languages with saved content — shown on top of the input picker
 };
@@ -79,6 +84,7 @@ export function DialogScreen({
   onChangeGoalLanguage,
   onSwapLanguages,
   onPurchasePro,
+  setDialogSort,
   tagSuggestions,
   contentLangCodes,
 }: Props) {
@@ -115,35 +121,65 @@ export function DialogScreen({
   const [quotaLeft, setQuotaLeft] = useState<number | null>(null);
   // Pinned cards — persisted, restored into the dialog on every mount (the
   // dialog itself is ephemeral: it resets on tab switches and app restarts).
-  const [pins, setPins] = useState<PinnedMsg[]>([]);
+  const [pins, setPins] = useState<DialogMsg[]>([]);
   const pinnedIds = new Set(pins.map((p) => p.id));
+
+  // Guards the auto-save below so the restore itself doesn't immediately write
+  // back what it just read.
+  const hydrated = useRef(false);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const stored = await loadPinned();
+      const [storedPins, storedRecent] = await Promise.all([loadPinned(), loadRecentDialog()]);
       if (!active) return;
-      setPins(stored);
-      setMessages((prev) =>
-        prev.length > 0
-          ? prev
-          : [...stored]
-              .sort((a, b) => a.createdAt - b.createdAt)
-              .map((p) => ({
-                id: p.id,
-                role: p.role,
-                text: p.text,
-                pinyin: p.pinyin,
-                translation: p.translation,
-                vocab: p.vocab,
-                restored: true,
-              }))
-      );
+      setPins(storedPins);
+      setMessages((prev) => {
+        if (prev.length > 0) return prev;
+        // The two stores overlap whenever a card in the recent window is also
+        // pinned. One entry per id, and the recent copy wins: it carries the
+        // real creation time, while a pin's is the moment it was pinned.
+        const byId = new Map<string, DialogMsg>();
+        for (const m of storedPins) byId.set(m.id, m);
+        for (const m of storedRecent) byId.set(m.id, m);
+        return [...byId.values()]
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .map((m) => ({
+            id: m.id,
+            role: m.role,
+            text: m.text,
+            createdAt: m.createdAt,
+            pinyin: m.pinyin,
+            translation: m.translation,
+            vocab: m.vocab,
+            restored: true,
+          }));
+      });
+      hydrated.current = true;
     })();
     return () => {
       active = false;
     };
   }, []);
+
+  // Persist the tail of the dialog on every change, so a tab switch or a
+  // restart comes back where it left off. saveRecentDialog trims to the window.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    saveRecentDialog(
+      messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text,
+        pinyin: m.pinyin,
+        translation: m.translation,
+        vocab: m.vocab,
+        lang: goalLang.code,
+        inputLang: inputLang.code,
+        createdAt: m.createdAt,
+      }))
+    );
+  }, [messages, goalLang.code, inputLang.code]);
 
   function togglePin(m: Msg) {
     setPins((prev) => {
@@ -161,7 +197,7 @@ export function DialogScreen({
               vocab: m.vocab,
               lang: goalLang.code,
               inputLang: inputLang.code,
-              createdAt: Date.now(),
+              createdAt: m.createdAt,
             },
           ];
       savePinned(next);
@@ -188,15 +224,25 @@ export function DialogScreen({
     return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   }
 
-  function scrollToEnd() {
-    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+  // Newest-first puts the latest card at the top, so "scroll to the new one"
+  // means the opposite end of the list.
+  function scrollToNewest() {
+    requestAnimationFrame(() =>
+      settings.dialogSort === 'desc'
+        ? scrollRef.current?.scrollTo({ y: 0, animated: true })
+        : scrollRef.current?.scrollToEnd({ animated: true })
+    );
   }
 
+  // Always chronological, whatever the display order — and restored cards are
+  // included, which is what lets a relaunch continue the conversation.
   function toHistory(msgs: Msg[]): ChatTurn[] {
-    return msgs.filter((m) => !m.restored).map((m) => ({
-      role: m.role === 'ai' ? 'assistant' : 'user',
-      content: m.text,
-    }));
+    return [...msgs]
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((m) => ({
+        role: m.role === 'ai' ? 'assistant' : 'user',
+        content: m.text,
+      }));
   }
 
   function cancel() {
@@ -230,6 +276,7 @@ export function DialogScreen({
       const aiMsg: Msg = {
         id: newId(),
         role: 'ai',
+        createdAt: Date.now(),
         text: reply.target,
         pinyin: reply.pinyin,
         translation: reply.translation,
@@ -237,7 +284,7 @@ export function DialogScreen({
       };
       setMessages((prev) => [...prev, aiMsg]);
       await recordUsage();
-      scrollToEnd();
+      scrollToNewest();
     } catch (e: any) {
       if (cancelledRef.current) {
         // User cancelled — clear silently, no error.
@@ -250,9 +297,12 @@ export function DialogScreen({
   }
 
   async function startConversation() {
-    // Keep the restored pinned cards visible — only the live turns reset.
-    setMessages((prev) => prev.filter((m) => m.restored));
-    await askAI([]);
+    // Keep the restored cards visible — only the live turns reset. Their
+    // history goes to the model too, so this resumes where you left off rather
+    // than greeting you from scratch.
+    const kept = messages.filter((m) => m.restored);
+    setMessages(kept);
+    await askAI(toHistory(kept));
   }
 
   async function onMicPress() {
@@ -299,10 +349,10 @@ export function DialogScreen({
   }
 
   async function sendUserText(text: string) {
-    const userMsg: Msg = { id: newId(), role: 'user', text };
+    const userMsg: Msg = { id: newId(), role: 'user', createdAt: Date.now(), text };
     const next = [...messages, userMsg];
     setMessages(next);
-    scrollToEnd();
+    scrollToNewest();
     await askAI(toHistory(next));
   }
 
@@ -377,6 +427,11 @@ export function DialogScreen({
 
   const recording = recorder.state === 'recording';
   const disabled = busy !== null;
+  // Card order is a persisted preference: oldest first reads like a transcript,
+  // newest first puts the latest reply under your thumb without scrolling.
+  const shown = [...messages].sort((a, b) =>
+    settings.dialogSort === 'desc' ? b.createdAt - a.createdAt : a.createdAt - b.createdAt
+  );
 
   return (
     <KeyboardAvoidingView
@@ -400,6 +455,20 @@ export function DialogScreen({
             onPress={() => setMode('ask')}
           />
         </View>
+        <Pressable
+          style={styles.quotaChip}
+          onPress={() => setDialogSort(settings.dialogSort === 'asc' ? 'desc' : 'asc')}
+          hitSlop={6}
+          accessibilityLabel={t(
+            settings.dialogSort === 'asc' ? 'dialog.sortAsc' : 'dialog.sortDesc'
+          )}
+        >
+          <Ionicons
+            name={settings.dialogSort === 'asc' ? 'arrow-down' : 'arrow-up'}
+            size={14}
+            color={theme.colors.accent}
+          />
+        </Pressable>
         <View style={styles.quotaChip}>
           <Ionicons name="flash-outline" size={13} color={theme.colors.accent} />
           <Text style={styles.quotaText}>
@@ -487,7 +556,7 @@ export function DialogScreen({
           </View>
         )}
 
-        {messages.map((m) =>
+        {shown.map((m) =>
           m.role === 'ai' ? (
             <AiBubble
               key={m.id}

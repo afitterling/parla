@@ -31,7 +31,9 @@ export type PhraseItem = {
 // A dialog card the learner pinned so it survives across sessions — the dialog
 // itself is ephemeral (state only), pinned cards are restored on the next
 // launch. Mirrors the dialog Msg shape plus the language pair and sync fields.
-export type PinnedMsg = {
+// A dialog card as it is stored. Backs both the pinned store and the rolling
+// recent-history store below.
+export type DialogMsg = {
   id: string;
   role: 'user' | 'ai';
   text: string;
@@ -47,7 +49,7 @@ export type PinnedMsg = {
   }[];
   lang: string; // goal language of the conversation when pinned
   inputLang: string;
-  createdAt: number; // when pinned — keeps the restore order stable
+  createdAt: number; // when the card was created — fixes the restore order
 };
 
 // An input→goal language combination the learner has actually saved content
@@ -111,6 +113,9 @@ export type Settings = {
   // screen (local-language phrases + location + two-way interpreter). Off by
   // default — it's opt-in via Settings.
   emergencyEnabled: boolean;
+  // Dialog card order: 'asc' oldest first (a transcript), 'desc' newest first
+  // (the latest reply without scrolling).
+  dialogSort: 'asc' | 'desc';
 };
 
 // ── Storage backing ───────────────────────────────────────────────────────────
@@ -123,6 +128,7 @@ export type Settings = {
 const VOCAB_FILE = 'vocab.json';
 const PHRASE_FILE = 'phrases.json';
 const PINNED_FILE = 'pinned.json';
+const RECENT_FILE = 'recent.json';
 const SETTINGS_FILE = 'settings.json';
 const USAGE_FILE = 'usage.json';
 
@@ -269,7 +275,7 @@ export async function savePhrases(items: PhraseItem[]): Promise<void> {
   await writeRaw(PHRASE_FILE, JSON.stringify(items));
 }
 
-function normalizePinned(items: any[]): PinnedMsg[] {
+function normalizeDialogMsgs(items: any[]): DialogMsg[] {
   return items
     .filter((m) => m && typeof m.id === 'string' && typeof m.text === 'string')
     .map((m) => ({
@@ -277,19 +283,52 @@ function normalizePinned(items: any[]): PinnedMsg[] {
       role: m.role === 'user' ? 'user' : 'ai',
       vocab: Array.isArray(m.vocab) ? m.vocab : undefined,
       createdAt: Number(m.createdAt) || 0,
-    })) as PinnedMsg[];
+    })) as DialogMsg[];
 }
 
-export async function loadPinned(): Promise<PinnedMsg[]> {
-  const cloud = normalizePinned(parseArray(await readCloud(PINNED_FILE)));
-  const local = normalizePinned(parseArray(await readLocal(PINNED_FILE)));
+export async function loadPinned(): Promise<DialogMsg[]> {
+  const cloud = normalizeDialogMsgs(parseArray(await readCloud(PINNED_FILE)));
+  const local = normalizeDialogMsgs(parseArray(await readLocal(PINNED_FILE)));
   const merged = mergeById(cloud, local);
   await reconcile(PINNED_FILE, merged, cloud.length);
   return merged;
 }
 
-export async function savePinned(items: PinnedMsg[]): Promise<void> {
+export async function savePinned(items: DialogMsg[]): Promise<void> {
   await writeRaw(PINNED_FILE, JSON.stringify(items));
+}
+
+// ── Recent dialog ───────────────────────────────────────────────────────────
+// The dialog itself is ephemeral, and pinning every card you might want back is
+// work. The tail of the conversation is therefore kept automatically and
+// restored on the next launch, alongside the pinned cards.
+
+// Counted in exchanges — one of your messages plus whatever came back — because
+// half a turn is not useful context to return to.
+export const MAX_RECENT_EXCHANGES = 20;
+
+// Trim to the trailing window: walk back from the newest and cut once
+// MAX_RECENT_EXCHANGES of your own messages have been seen, so a restored
+// window always begins on one of your turns rather than mid-answer.
+export function trimToRecent<T extends { role: 'user' | 'ai' }>(msgs: T[]): T[] {
+  let turns = 0;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== 'user') continue;
+    turns += 1;
+    if (turns > MAX_RECENT_EXCHANGES) return msgs.slice(i + 1);
+  }
+  return msgs;
+}
+
+// Unlike the pinned store this is deliberately not merged across devices: it is
+// one rolling window, and unioning two devices' tails would interleave two
+// different conversations. readRaw already prefers the iCloud copy.
+export async function loadRecentDialog(): Promise<DialogMsg[]> {
+  return normalizeDialogMsgs(parseArray(await readRaw(RECENT_FILE)));
+}
+
+export async function saveRecentDialog(items: DialogMsg[]): Promise<void> {
+  await writeRaw(RECENT_FILE, JSON.stringify(trimToRecent(items)));
 }
 
 // Distinct tags ordered by most recent use (newest item that carries them
@@ -340,6 +379,7 @@ export async function loadSettings(): Promise<Settings> {
     theme: stored.theme === 'light' || stored.theme === 'dark' ? stored.theme : 'system',
     recentPairs: sanitizePairs(stored.recentPairs),
     emergencyEnabled: stored.emergencyEnabled === true,
+    dialogSort: stored.dialogSort === 'desc' ? 'desc' : 'asc',
   };
 }
 

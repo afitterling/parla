@@ -168,6 +168,11 @@ export default function App() {
     handleSaveSettings({ ...settings, uiLanguage: code });
   }
 
+  function setDialogSort(order: 'asc' | 'desc') {
+    if (!settings) return;
+    handleSaveSettings({ ...settings, dialogSort: order });
+  }
+
   function setDefaultMode(mode: 'free' | 'ask') {
     if (!settings) return;
     handleSaveSettings({ ...settings, defaultMode: mode });
@@ -369,6 +374,7 @@ export default function App() {
             onChangeInputLanguage={changeInputLanguage}
             onChangeGoalLanguage={changeGoalLanguage}
             onSwapLanguages={swapLanguages}
+            setDialogSort={setDialogSort}
             onPurchasePro={purchasePro}
             tagSuggestions={recentTags(phrases)}
             contentLangCodes={contentLanguages(settings.recentPairs, vocab, phrases)}

@@ -18,7 +18,7 @@ import {
   loadVocab,
   mergeById,
   PhraseItem,
-  PinnedMsg,
+  DialogMsg,
   QuizPrefs,
   QuizScope,
   savePhrases,
@@ -46,7 +46,7 @@ export type Backup = {
   source: { app: string; version: string; bundleId: string };
   vocab: VocabItem[];
   phrases: PhraseItem[];
-  pinned: PinnedMsg[];
+  pinned: DialogMsg[];
   settings: BackupSettings;
   quiz: Partial<Record<QuizScope, QuizPrefs>>;
 };
