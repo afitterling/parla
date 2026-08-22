@@ -9,12 +9,16 @@ import Foundation
 // and a sync-in from another can't corrupt the file. Reads first trigger a
 // download if only a not-yet-materialized iCloud placeholder is present.
 public final class ParlaICloudModule: Module {
-  // The app's iCloud container id. Deliberately NOT derived from the bundle id:
-  // every variant — the legacy build, the dev build and the shipping one — reads
-  // and writes one library, which is what makes a TestFlight build show the same
-  // words as the App Store build on the same Apple ID. Must match the
-  // entitlement, the NSUbiquitousContainers key and the Mac app's container.
-  private let containerId = "iCloud.com.afitterling.sprachapp"
+  // The app's iCloud container id, derived from the bundle id so each identity
+  // owns its own library: tech.sp33c.parla.dev → iCloud.tech.sp33c.parla.dev.
+  // A dev build therefore cannot scribble over the store the shipping app uses,
+  // and switching identity is not a migration — the new container starts empty
+  // and Settings → Backup moves a library across deliberately.
+  // scripts/setBundleId.sh keeps the entitlement and the NSUbiquitousContainers
+  // key in step; Settings shows the resolved value via containerId() below.
+  private var containerId: String {
+    "iCloud." + (Bundle.main.bundleIdentifier ?? "com.afitterling.sprachapp")
+  }
 
   public func definition() -> ModuleDefinition {
     Name("ParlaICloud")

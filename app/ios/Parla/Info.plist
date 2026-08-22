@@ -32,7 +32,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>28</string>
+	<string>30</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -58,7 +58,7 @@
 	<string>Parla liest Text aus einem Foto, um daraus Vokabeln und Sätze zu erstellen.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
-		<key>iCloud.com.afitterling.sprachapp</key>
+		<key>iCloud.tech.sp33c.parla.dev</key>
 		<dict>
 			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
 			<true/>
