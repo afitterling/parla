@@ -45,6 +45,22 @@ const DATA_FILES = ['vocab.json', 'phrases.json', 'settings.json', 'usage.json',
 
 let dataDirPromise: Promise<string> | null = null;
 
+// Nothing in the renderer can paint until the data directory resolves, and every
+// step below talks to iCloud — which can stall for a long time, or forever, when
+// a file is an evicted placeholder that has to be downloaded first. Bound the
+// waits so a slow or wedged iCloud degrades instead of hanging on a spinner.
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
+const MIGRATION_TIMEOUT_MS = 5000;
+const CONTAINER_TIMEOUT_MS = 10000;
+
 // One-time copy of any prior-location files into the active container, without
 // clobbering files already there (the active container copy wins).
 async function migrateInto(target: string): Promise<void> {
@@ -75,15 +91,32 @@ async function migrateInto(target: string): Promise<void> {
 async function resolveDataDir(): Promise<string> {
   // Only use iCloud if the base exists (i.e. iCloud Drive is enabled on this Mac).
   try {
-    await fs.access(MOBILE_DOCS);
-    await fs.mkdir(CONTAINER_DIR, { recursive: true });
-    await migrateInto(CONTAINER_DIR);
-    return CONTAINER_DIR;
+    await withTimeout(
+      (async () => {
+        await fs.access(MOBILE_DOCS);
+        await fs.mkdir(CONTAINER_DIR, { recursive: true });
+      })(),
+      CONTAINER_TIMEOUT_MS,
+      'iCloud container'
+    );
   } catch {
+    // iCloud is off, or wedged long enough that it may as well be. Fall back to
+    // local storage — Settings shows this as sync-off rather than hiding it.
     const fallback = join(app.getPath('userData'), 'Parla');
     await fs.mkdir(fallback, { recursive: true });
     return fallback;
   }
+
+  // Migration is best-effort and deliberately does NOT gate the container: files
+  // it copies come from an evicted iCloud folder that may need downloading, and
+  // waiting on that is what makes a first launch look frozen. Time out and carry
+  // on with an empty container — Settings → Backup imports a library on purpose.
+  try {
+    await withTimeout(migrateInto(CONTAINER_DIR), MIGRATION_TIMEOUT_MS, 'iCloud migration');
+  } catch (err) {
+    console.warn('[parla] skipping migration:', err);
+  }
+  return CONTAINER_DIR;
 }
 
 function dataDir(): Promise<string> {
