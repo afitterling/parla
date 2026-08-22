@@ -24,7 +24,7 @@ const MOBILE_DOCS = join(homedir(), 'Library', 'Mobile Documents');
 // exact container id) has created it and iCloud Drive is on for the same Apple
 // ID. Pointing here at a container no iOS build owns gives a local-only folder.
 const CONTAINER_ID = (
-  (import.meta as any).env?.MAIN_VITE_ICLOUD_CONTAINER || 'iCloud.com.afitterling.sprachapp'
+  (import.meta as any).env?.MAIN_VITE_ICLOUD_CONTAINER || 'iCloud.tech.sp33c.parla'
 )
   .toString()
   .trim();
@@ -38,7 +38,7 @@ const CONTAINER_DIR = join(MOBILE_DOCS, CONTAINER_ID.replace(/\./g, '~'), 'Docum
 // your words/phrases. Order = lowest priority first.
 const MIGRATION_SOURCES = [
   join(MOBILE_DOCS, 'com~apple~CloudDocs', 'Parla'), // very old top-level iCloud Drive folder
-  join(MOBILE_DOCS, 'iCloud~com~afitterling~sprachapp', 'Documents'), // production container
+  join(MOBILE_DOCS, 'iCloud~com~afitterling~sprachapp', 'Documents'), // pre-rename container
 ];
 
 const DATA_FILES = ['vocab.json', 'phrases.json', 'settings.json', 'usage.json', 'quiz.json'];

@@ -9,9 +9,14 @@ import Foundation
 // and a sync-in from another can't corrupt the file. Reads first trigger a
 // download if only a not-yet-materialized iCloud placeholder is present.
 public final class ParlaICloudModule: Module {
-  // The app's iCloud container id. Must match the entitlement /
-  // NSUbiquitousContainers key and the Mac app's container path.
-  private let containerId = "iCloud.com.afitterling.sprachapp"
+  // The app's iCloud container id, derived from the bundle id so each build
+  // variant gets its own store: the dev build cannot scribble over the library
+  // the shipping app is using. scripts/setBundleId.sh keeps the entitlement and
+  // the NSUbiquitousContainers key in step with this, and the Mac app points at
+  // the same id via MAIN_VITE_ICLOUD_CONTAINER.
+  private var containerId: String {
+    "iCloud." + (Bundle.main.bundleIdentifier ?? "com.afitterling.sprachapp")
+  }
 
   public func definition() -> ModuleDefinition {
     Name("ParlaICloud")
