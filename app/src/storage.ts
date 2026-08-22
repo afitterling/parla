@@ -533,6 +533,14 @@ export function isPaywallActive(isPro: boolean): boolean {
 }
 
 // Whether the shared iCloud store is active right now (for a Settings indicator).
-export async function iCloudStatus(): Promise<{ linked: boolean; available: boolean }> {
-  return { linked: iCloud.isLinked(), available: await iCloud.isAvailable() };
+export async function iCloudStatus(): Promise<{
+  linked: boolean;
+  available: boolean;
+  container: string;
+}> {
+  return {
+    linked: iCloud.isLinked(),
+    available: await iCloud.isAvailable(),
+    container: iCloud.containerId(),
+  };
 }

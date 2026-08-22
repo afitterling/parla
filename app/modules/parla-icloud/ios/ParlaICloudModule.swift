@@ -9,20 +9,24 @@ import Foundation
 // and a sync-in from another can't corrupt the file. Reads first trigger a
 // download if only a not-yet-materialized iCloud placeholder is present.
 public final class ParlaICloudModule: Module {
-  // The app's iCloud container id, derived from the bundle id so each build
-  // variant gets its own store: the dev build cannot scribble over the library
-  // the shipping app is using. scripts/setBundleId.sh keeps the entitlement and
-  // the NSUbiquitousContainers key in step with this, and the Mac app points at
-  // the same id via MAIN_VITE_ICLOUD_CONTAINER.
-  private var containerId: String {
-    "iCloud." + (Bundle.main.bundleIdentifier ?? "com.afitterling.sprachapp")
-  }
+  // The app's iCloud container id. Deliberately NOT derived from the bundle id:
+  // every variant — the legacy build, the dev build and the shipping one — reads
+  // and writes one library, which is what makes a TestFlight build show the same
+  // words as the App Store build on the same Apple ID. Must match the
+  // entitlement, the NSUbiquitousContainers key and the Mac app's container.
+  private let containerId = "iCloud.com.afitterling.sprachapp"
 
   public func definition() -> ModuleDefinition {
     Name("ParlaICloud")
 
     AsyncFunction("isAvailable") { () -> Bool in
       self.documentsURL() != nil
+    }
+
+    // Surfaced in Settings: which container this build actually talks to. When
+    // a build appears to have lost its library, this is the first thing to check.
+    Function("containerId") { () -> String in
+      self.containerId
     }
 
     AsyncFunction("readFile") { (name: String) -> String? in

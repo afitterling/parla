@@ -13,7 +13,7 @@
         "NSMicrophoneUsageDescription": "Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren.",
         "NSLocationWhenInUseUsageDescription": "Parla zeigt im Notfall deinen Standort an, damit du ihn Helfern zeigen kannst.",
         "NSUbiquitousContainers": {
-          "iCloud.tech.sp33c.parla.dev": {
+          "iCloud.com.afitterling.sprachapp": {
             "NSUbiquitousContainerIsDocumentScopePublic": true,
             "NSUbiquitousContainerName": "Parla",
             "NSUbiquitousContainerSupportedFolderLevels": "Any"
@@ -26,17 +26,17 @@
       },
       "entitlements": {
         "com.apple.developer.icloud-container-identifiers": [
-          "iCloud.tech.sp33c.parla.dev"
+          "iCloud.com.afitterling.sprachapp"
         ],
         "com.apple.developer.icloud-services": [
           "CloudDocuments"
         ],
         "com.apple.developer.ubiquity-container-identifiers": [
-          "iCloud.tech.sp33c.parla.dev"
+          "iCloud.com.afitterling.sprachapp"
         ]
       },
       "bundleIdentifier": "tech.sp33c.parla.dev",
-      "buildNumber": "27"
+      "buildNumber": "28"
     },
     "android": {
       "adaptiveIcon": {

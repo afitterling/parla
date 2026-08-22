@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,7 @@ import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { Settings } from '../storage';
+import { iCloudStatus, Settings } from '../storage';
 import { exportBackup, importBackup } from '../backup';
 import { findLanguage } from '../languages';
 import { LanguagePicker } from '../components/LanguagePicker';
@@ -63,6 +63,20 @@ export function SettingsScreen({
   const [uiLangOpen, setUiLangOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [backupBusy, setBackupBusy] = useState<'export' | 'import' | null>(null);
+  // Which iCloud container this build talks to. When a build looks like it lost
+  // its library, this is the first thing to check — the bundle id can change
+  // without the container changing, and vice versa.
+  const [sync, setSync] = useState<{
+    linked: boolean;
+    available: boolean;
+    container: string;
+  } | null>(null);
+
+  useEffect(() => {
+    iCloudStatus()
+      .then(setSync)
+      .catch(() => setSync(null));
+  }, []);
 
   // App / build info — baked in from app.json at build time (see scripts/setVersion.sh).
   const appVersion = Constants.expoConfig?.version ?? '—';
@@ -73,6 +87,11 @@ export function SettingsScreen({
     { label: 'Version', value: String(appVersion) },
     { label: 'Build', value: String(buildNumber) },
     { label: 'Bundle', value: String(bundleId) },
+    { label: 'iCloud', value: sync ? sync.container || '—' : '…' },
+    {
+      label: 'Sync',
+      value: sync ? (sync.available ? 'on' : sync.linked ? 'off' : 'not linked') : '…',
+    },
     { label: 'System', value: systemInfo },
   ];
 
