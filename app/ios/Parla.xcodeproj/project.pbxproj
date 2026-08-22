@@ -379,7 +379,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.afitterling.sprachapp;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.sp33c.parla.dev;
 				PRODUCT_NAME = Parla;
 				SWIFT_OBJC_BRIDGING_HEADER = "Parla/Parla-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -414,7 +414,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.afitterling.sprachapp;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.sp33c.parla.dev;
 				PRODUCT_NAME = Parla;
 				SWIFT_OBJC_BRIDGING_HEADER = "Parla/Parla-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
