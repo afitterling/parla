@@ -52,6 +52,11 @@ type Msg = {
   role: 'user' | 'ai';
   text: string;
   createdAt: number;
+  // The pair the card was spoken in. Carried on the card rather than read off
+  // the current setup, so a language switch can never re-stamp what came
+  // before it — and so the render can drop what belongs to another pair.
+  lang: string;
+  inputLang: string;
   pinyin?: string;
   translation?: string;
   vocab?: VocabSuggestion[];
@@ -124,6 +129,15 @@ export function DialogScreen({
   const [pins, setPins] = useState<DialogMsg[]>([]);
   const pinnedIds = new Set(pins.map((p) => p.id));
 
+  // The cards spoken in the pair currently set up — the only ones this screen
+  // deals with: what it lists, what it counts as empty, and what history the
+  // model is given. A second gate behind the restore filter, so a reply that
+  // lands after a switch, or a card from a restore still in flight, can never
+  // surface under a pair it was not spoken in.
+  const current = messages.filter(
+    (m) => m.lang === goalLang.code && m.inputLang === inputLang.code
+  );
+
   // Guards the auto-save below so the restore itself doesn't immediately write
   // back what it just read. Cleared again on a language switch, so the save
   // effect can't tag the outgoing pair's cards with the incoming pair.
@@ -161,6 +175,8 @@ export function DialogScreen({
             pinyin: m.pinyin,
             translation: m.translation,
             vocab: m.vocab,
+            lang: m.lang,
+            inputLang: m.inputLang,
             restored: true,
           }))
       );
@@ -184,12 +200,12 @@ export function DialogScreen({
         pinyin: m.pinyin,
         translation: m.translation,
         vocab: m.vocab,
-        lang: goalLang.code,
-        inputLang: inputLang.code,
+        lang: m.lang,
+        inputLang: m.inputLang,
         createdAt: m.createdAt,
       })),
     ]);
-  }, [messages, goalLang.code, inputLang.code]);
+  }, [messages]);
 
   function togglePin(m: Msg) {
     setPins((prev) => {
@@ -205,8 +221,8 @@ export function DialogScreen({
               pinyin: m.pinyin,
               translation: m.translation,
               vocab: m.vocab,
-              lang: goalLang.code,
-              inputLang: inputLang.code,
+              lang: m.lang,
+              inputLang: m.inputLang,
               createdAt: m.createdAt,
             },
           ];
@@ -287,6 +303,8 @@ export function DialogScreen({
         id: newId(),
         role: 'ai',
         createdAt: Date.now(),
+        lang: goalLang.code,
+        inputLang: inputLang.code,
         text: reply.target,
         pinyin: reply.pinyin,
         translation: reply.translation,
@@ -310,7 +328,7 @@ export function DialogScreen({
     // Keep the restored cards visible — only the live turns reset. Their
     // history goes to the model too, so this resumes where you left off rather
     // than greeting you from scratch.
-    const kept = messages.filter((m) => m.restored);
+    const kept = current.filter((m) => m.restored);
     setMessages(kept);
     await askAI(toHistory(kept));
   }
@@ -359,8 +377,15 @@ export function DialogScreen({
   }
 
   async function sendUserText(text: string) {
-    const userMsg: Msg = { id: newId(), role: 'user', createdAt: Date.now(), text };
-    const next = [...messages, userMsg];
+    const userMsg: Msg = {
+      id: newId(),
+      role: 'user',
+      createdAt: Date.now(),
+      text,
+      lang: goalLang.code,
+      inputLang: inputLang.code,
+    };
+    const next = [...current, userMsg];
     setMessages(next);
     scrollToNewest();
     await askAI(toHistory(next));
@@ -439,7 +464,7 @@ export function DialogScreen({
   const disabled = busy !== null;
   // Card order is a persisted preference: oldest first reads like a transcript,
   // newest first puts the latest reply under your thumb without scrolling.
-  const shown = [...messages].sort((a, b) =>
+  const shown = [...current].sort((a, b) =>
     settings.dialogSort === 'desc' ? b.createdAt - a.createdAt : a.createdAt - b.createdAt
   );
 
@@ -545,11 +570,11 @@ export function DialogScreen({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {messages.every((m) => m.restored) && (
+        {current.every((m) => m.restored) && (
           // No live conversation yet. With restored pinned cards present, a
           // compact variant keeps the start button reachable without the hero.
-          <View style={[styles.empty, messages.length > 0 && styles.emptyCompact]}>
-            {messages.length === 0 && (
+          <View style={[styles.empty, current.length > 0 && styles.emptyCompact]}>
+            {current.length === 0 && (
               <>
                 <Ionicons name="mic-outline" size={56} color={theme.colors.accent} />
                 <Text style={styles.emptyTitle}>{t('dialog.readyTitle')}</Text>
