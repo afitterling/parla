@@ -320,6 +320,20 @@ export function trimToRecent<T extends { role: 'user' | 'ai' }>(msgs: T[]): T[] 
   return msgs;
 }
 
+// One window per input→goal pair: the dialog only ever shows the cards of the
+// pair currently set up, so trimming across all of them would cut a pair's tail
+// short as soon as another one is talked to.
+export function trimRecentByPair(items: DialogMsg[]): DialogMsg[] {
+  const byPair = new Map<string, DialogMsg[]>();
+  for (const m of items) {
+    const key = `${m.inputLang}→${m.lang}`;
+    const list = byPair.get(key);
+    if (list) list.push(m);
+    else byPair.set(key, [m]);
+  }
+  return [...byPair.values()].flatMap(trimToRecent).sort((a, b) => a.createdAt - b.createdAt);
+}
+
 // Unlike the pinned store this is deliberately not merged across devices: it is
 // one rolling window, and unioning two devices' tails would interleave two
 // different conversations. readRaw already prefers the iCloud copy.
@@ -328,7 +342,7 @@ export async function loadRecentDialog(): Promise<DialogMsg[]> {
 }
 
 export async function saveRecentDialog(items: DialogMsg[]): Promise<void> {
-  await writeRaw(RECENT_FILE, JSON.stringify(trimToRecent(items)));
+  await writeRaw(RECENT_FILE, JSON.stringify(trimRecentByPair(items)));
 }
 
 // Distinct tags ordered by most recent use (newest item that carries them

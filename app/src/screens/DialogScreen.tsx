@@ -125,24 +125,33 @@ export function DialogScreen({
   const pinnedIds = new Set(pins.map((p) => p.id));
 
   // Guards the auto-save below so the restore itself doesn't immediately write
-  // back what it just read.
+  // back what it just read. Cleared again on a language switch, so the save
+  // effect can't tag the outgoing pair's cards with the incoming pair.
   const hydrated = useRef(false);
+  // The other pairs' recent cards, held aside so writing this pair's window
+  // back doesn't drop theirs.
+  const otherRecent = useRef<DialogMsg[]>([]);
 
+  // A conversation belongs to exactly one input→goal pair, and only the pair
+  // currently set up is shown — de → zh cards have no place in an en → en
+  // dialog. Re-runs on a switch, which swaps the visible conversation.
   useEffect(() => {
     let active = true;
+    hydrated.current = false;
     (async () => {
       const [storedPins, storedRecent] = await Promise.all([loadPinned(), loadRecentDialog()]);
       if (!active) return;
+      const mine = (m: DialogMsg) => m.lang === goalLang.code && m.inputLang === inputLang.code;
       setPins(storedPins);
-      setMessages((prev) => {
-        if (prev.length > 0) return prev;
-        // The two stores overlap whenever a card in the recent window is also
-        // pinned. One entry per id, and the recent copy wins: it carries the
-        // real creation time, while a pin's is the moment it was pinned.
-        const byId = new Map<string, DialogMsg>();
-        for (const m of storedPins) byId.set(m.id, m);
-        for (const m of storedRecent) byId.set(m.id, m);
-        return [...byId.values()]
+      otherRecent.current = storedRecent.filter((m) => !mine(m));
+      // The two stores overlap whenever a card in the recent window is also
+      // pinned. One entry per id, and the recent copy wins: it carries the
+      // real creation time, while a pin's is the moment it was pinned.
+      const byId = new Map<string, DialogMsg>();
+      for (const m of storedPins.filter(mine)) byId.set(m.id, m);
+      for (const m of storedRecent.filter(mine)) byId.set(m.id, m);
+      setMessages(
+        [...byId.values()]
           .sort((a, b) => a.createdAt - b.createdAt)
           .map((m) => ({
             id: m.id,
@@ -153,21 +162,22 @@ export function DialogScreen({
             translation: m.translation,
             vocab: m.vocab,
             restored: true,
-          }));
-      });
+          }))
+      );
       hydrated.current = true;
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [goalLang.code, inputLang.code]);
 
   // Persist the tail of the dialog on every change, so a tab switch or a
   // restart comes back where it left off. saveRecentDialog trims to the window.
   useEffect(() => {
     if (!hydrated.current) return;
-    saveRecentDialog(
-      messages.map((m) => ({
+    saveRecentDialog([
+      ...otherRecent.current,
+      ...messages.map((m) => ({
         id: m.id,
         role: m.role,
         text: m.text,
@@ -177,8 +187,8 @@ export function DialogScreen({
         lang: goalLang.code,
         inputLang: inputLang.code,
         createdAt: m.createdAt,
-      }))
-    );
+      })),
+    ]);
   }, [messages, goalLang.code, inputLang.code]);
 
   function togglePin(m: Msg) {
