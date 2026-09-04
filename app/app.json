@@ -2,7 +2,7 @@
   "expo": {
     "name": "Parla",
     "slug": "sprachapp",
-    "version": "0.9.1",
+    "version": "0.9.2",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -36,7 +36,7 @@
         ]
       },
       "bundleIdentifier": "tech.sp33c.parla.dev",
-      "buildNumber": "31"
+      "buildNumber": "32"
     },
     "android": {
       "adaptiveIcon": {
