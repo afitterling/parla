@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Platform,
   Pressable,
   SafeAreaView,
@@ -37,7 +38,17 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { I18nProvider } from './src/i18n/I18nContext';
 import { lockPortrait } from './src/orientation';
 import { PairMenu } from './src/components/PairMenu';
+import { SymbolCard } from './src/components/SymbolCard';
 import { makeT, resolveUiLang } from './src/i18n';
+import {
+  addNotificationResponseReceivedListener,
+  dailySymbolsActive,
+  ensureNotificationPermission,
+  getLastNotificationResponseAsync,
+  symbolFromResponse,
+  syncSymbolNotifications,
+} from './src/notifications';
+import { currentSlotIndex, hasDailySymbols } from './src/symbols';
 
 type Tab = 'dialog' | 'vocab' | 'phrases' | 'settings';
 
@@ -55,6 +66,8 @@ export default function App() {
   const [vocab, setVocab] = useState<VocabItem[]>([]);
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
+  // The symbol-of-the-day card: which list and which slot it shows.
+  const [symbolView, setSymbolView] = useState<{ lang: string; index: number } | null>(null);
   const scheme = useColorScheme();
 
   // The app itself stays portrait; only the full-screen word card unlocks
@@ -82,6 +95,79 @@ export default function App() {
   async function handleSaveSettings(next: Settings) {
     setSettings(next);
     await saveSettings(next);
+  }
+
+  // ── Symbol of the day ──────────────────────────────────────────────────────
+  // Keep the week of scheduled notifications in step with the settings, and
+  // top it up whenever the app returns to the foreground (each launch consumes
+  // the slots that fired in between).
+  const symbolsOn = settings ? dailySymbolsActive(settings) : false;
+  const symbolLang = settings?.goalLanguage;
+  const symbolPerDay = settings?.dailySymbols ?? 0;
+  const symbolStart = settings && symbolLang ? settings.dailySymbolStart[symbolLang] : undefined;
+  const uiLangSetting = settings?.uiLanguage ?? 'auto';
+  useEffect(() => {
+    if (!settings) return;
+    const sync = () => {
+      syncSymbolNotifications(settings, makeT(resolveUiLang(settings.uiLanguage))).catch(() => {});
+    };
+    sync();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') sync();
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolsOn, symbolLang, symbolPerDay, symbolStart, uiLangSetting]);
+
+  // A tapped notification opens its symbol — both the one that launched the
+  // app and any tapped while it is running.
+  useEffect(() => {
+    const open = (data: { lang: string; index: number } | null) => {
+      if (data) setSymbolView({ lang: data.lang, index: data.index });
+    };
+    getLastNotificationResponseAsync()
+      .then((r) => open(symbolFromResponse(r)))
+      .catch(() => {});
+    const sub = addNotificationResponseReceivedListener((r) => open(symbolFromResponse(r)));
+    return () => sub.remove();
+  }, []);
+
+  // Latest slot handed out for a language — the card cannot browse past it.
+  function symbolMaxIndex(lang: string): number {
+    if (!settings) return 0;
+    const start = settings.dailySymbolStart[lang];
+    if (start === undefined) return 0;
+    return currentSlotIndex(start, settings.dailySymbols || 1, new Date());
+  }
+
+  function openCurrentSymbol() {
+    if (!settings || !hasDailySymbols(settings.goalLanguage)) return;
+    const lang = settings.goalLanguage;
+    // Opening by hand before the feature was ever enabled starts the sequence.
+    if (settings.dailySymbolStart[lang] === undefined) {
+      handleSaveSettings({
+        ...settings,
+        dailySymbolStart: { ...settings.dailySymbolStart, [lang]: Date.now() },
+      });
+      setSymbolView({ lang, index: 0 });
+      return;
+    }
+    setSymbolView({ lang, index: symbolMaxIndex(lang) });
+  }
+
+  async function setDailySymbols(value: 0 | 1 | 3) {
+    if (!settings) return;
+    if (value > 0 && !(await ensureNotificationPermission())) {
+      const t = makeT(resolveUiLang(settings.uiLanguage));
+      Alert.alert(t('symbol.title'), t('symbol.permissionDenied'));
+      return;
+    }
+    const lang = settings.goalLanguage;
+    const starts =
+      value > 0 && settings.dailySymbolStart[lang] === undefined
+        ? { ...settings.dailySymbolStart, [lang]: Date.now() }
+        : settings.dailySymbolStart;
+    handleSaveSettings({ ...settings, dailySymbols: value, dailySymbolStart: starts });
   }
 
   function changeInputLanguage(code: string) {
@@ -335,10 +421,16 @@ export default function App() {
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle={barStyle} backgroundColor={appTheme.colors.bg} />
       <View style={styles.header}>
-        <View style={styles.logoMark}>
+        {/* The 文 mark doubles as the way into today's symbol once the feature
+            is on — it is the character learners come to the app for. */}
+        <Pressable
+          style={styles.logoMark}
+          onPress={symbolsOn ? openCurrentSymbol : undefined}
+          disabled={!symbolsOn}
+        >
           <Text style={styles.logoMarkText}>文</Text>
           <View style={styles.logoDot} />
-        </View>
+        </Pressable>
         <View style={styles.headerText}>
           <Text style={styles.logo}>
             Parl<Text style={styles.logoWord}>a</Text>
@@ -414,6 +506,8 @@ export default function App() {
             setDefaultMode={setDefaultMode}
             setTheme={setTheme}
             setPro={setPro}
+            setDailySymbols={setDailySymbols}
+            onShowSymbol={openCurrentSymbol}
             purchasePro={purchasePro}
             restorePurchases={restorePurchases}
             onImported={reloadStores}
@@ -426,6 +520,20 @@ export default function App() {
         onClose={() => setEmergencyOpen(false)}
         settings={settings}
       />
+
+      {symbolView && (
+        <SymbolCard
+          visible
+          lang={symbolView.lang}
+          index={symbolView.index}
+          maxIndex={Math.max(symbolView.index, symbolMaxIndex(symbolView.lang))}
+          settings={settings}
+          onIndexChange={(index) => setSymbolView({ ...symbolView, index })}
+          onAddVocab={(item) => addVocab([item])}
+          onPurchasePro={purchasePro}
+          onClose={() => setSymbolView(null)}
+        />
+      )}
 
       <View style={styles.tabBar}>
         {TABS.map((tb) => {

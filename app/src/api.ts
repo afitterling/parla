@@ -484,6 +484,83 @@ Regeln:
   return pinyin;
 }
 
+// ── Symbol of the day ────────────────────────────────────────────────────────
+// The Coach explains one character to the learner in their own language:
+// meaning, the reading, two example words and a memory hook. Kana get the same
+// treatment (the "meaning" is then what the syllable is and where it shows up).
+export type SymbolExplanation = {
+  reading: string;
+  meaning: string;
+  examples: { text: string; reading: string; translation: string }[];
+  mnemonic: string;
+};
+
+export async function explainSymbol(
+  openaiKey: string,
+  char: string,
+  goalLang: Language,
+  learnerLang: Language,
+  signal?: AbortSignal
+): Promise<SymbolExplanation> {
+  if (!openaiKey) throw new Error('Kein OpenAI-Key gesetzt (Settings).');
+
+  const system = `Du bist ein geduldiger Sprachcoach für ${goalLang.label} (${goalLang.nativeName}). Der Lernende spricht ${learnerLang.label} (${learnerLang.nativeName}) und lernt gerade ein einzelnes Schriftzeichen.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form (keine Code-Fences, kein Text davor oder danach):
+{
+  "reading": "<lateinische Umschrift des Zeichens: Pinyin mit Tönen / Romaji / Jyutping; bei mehreren Lesungen die 1–2 wichtigsten, mit ' / ' getrennt>",
+  "meaning": "<Bedeutung(en) in 1–2 kurzen Sätzen auf ${learnerLang.label}>",
+  "examples": [
+    { "text": "<häufiges Wort oder kurzer Ausdruck in ${goalLang.nativeName}, der das Zeichen enthält>", "reading": "<Umschrift>", "translation": "<Übersetzung auf ${learnerLang.label}>" },
+    { "text": "...", "reading": "...", "translation": "..." }
+  ],
+  "mnemonic": "<eine anschauliche Merkhilfe (Form, Bestandteile oder Herkunft) in 1–2 Sätzen auf ${learnerLang.label}>"
+}
+
+Regeln:
+- "meaning", "translation" und "mnemonic" sind auf ${learnerLang.label} geschrieben.
+- Genau 2 Beispiele, alltagsnah und für Anfänger.
+- Bei einem Kana-Zeichen: "meaning" erklärt Silbe und Silbenschrift, die Beispiele sind Wörter, die damit beginnen.${
+    goalLang.promptHint ? `\n- ${goalLang.promptHint}` : ''
+  }`;
+
+  const { signal: s, done } = linkSignals(signal, 30000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${openaiKey}` },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: char },
+        ],
+      }),
+      signal: s,
+    });
+  } finally {
+    done();
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI-Fehler (${res.status})`);
+
+  const json = extractJson(data?.choices?.[0]?.message?.content ?? '');
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const meaning = str(json?.meaning);
+  if (!meaning) throw new Error('Keine Erklärung erhalten — bitte nochmal versuchen.');
+  const examples = Array.isArray(json?.examples)
+    ? json.examples
+        .map((e: any) => ({ text: str(e?.text), reading: str(e?.reading), translation: str(e?.translation) }))
+        .filter((e: { text: string }) => e.text)
+        .slice(0, 2)
+    : [];
+  return { reading: str(json?.reading), meaning, examples, mnemonic: str(json?.mnemonic) };
+}
+
 // ── Translate a single vocab term ────────────────────────────────────────────
 // The add card lets the learner enter only ONE side of the pair (either the
 // goal-language word or its translation); this fills in the other side. When

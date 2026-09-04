@@ -116,6 +116,12 @@ export type Settings = {
   // Dialog card order: 'asc' oldest first (a transcript), 'desc' newest first
   // (the latest reply without scrolling).
   dialogSort: 'asc' | 'desc';
+  // Symbol of the day (Han-script goal languages only): how many characters a
+  // day the Coach pushes as notifications — 0 = off, 1 = morning, 3 = morning,
+  // midday and evening. See src/symbols.ts and src/notifications.ts.
+  dailySymbols: 0 | 1 | 3;
+  // Per goal language, when the sequence started (ms) — day 0 of the list.
+  dailySymbolStart: Record<string, number>;
 };
 
 // ── Storage backing ───────────────────────────────────────────────────────────
@@ -394,7 +400,18 @@ export async function loadSettings(): Promise<Settings> {
     recentPairs: sanitizePairs(stored.recentPairs),
     emergencyEnabled: stored.emergencyEnabled === true,
     dialogSort: stored.dialogSort === 'desc' ? 'desc' : 'asc',
+    dailySymbols: stored.dailySymbols === 3 ? 3 : stored.dailySymbols === 1 ? 1 : 0,
+    dailySymbolStart: sanitizeStarts(stored.dailySymbolStart),
   };
+}
+
+function sanitizeStarts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
 }
 
 // Older builds (and the desktop app) don't write `recentPairs` — accept anything
@@ -544,6 +561,47 @@ const IS_DEV_ENV = (process.env.EXPO_PUBLIC_ENV ?? '').toLowerCase() === 'dev' |
 
 export function isPaywallActive(isPro: boolean): boolean {
   return !IS_DEV_ENV && !isPro;
+}
+
+// ── Symbol-of-the-day lessons ─────────────────────────────────────────────────
+// The Coach's explanation of a character, in the learner's language. A cache,
+// not library content: local only (AsyncStorage), keyed by goal language,
+// character and the language the explanation is written in.
+export type SymbolLesson = {
+  reading: string;
+  meaning: string;
+  examples: { text: string; reading: string; translation: string }[];
+  mnemonic: string;
+};
+
+const LESSON_KEY = 'parla.symbolLessons';
+const MAX_LESSONS = 400;
+
+export function lessonKey(lang: string, char: string, learnerLang: string): string {
+  return `${lang}:${char}:${learnerLang}`;
+}
+
+async function loadLessons(): Promise<Record<string, SymbolLesson>> {
+  try {
+    const raw = await AsyncStorage.getItem(LESSON_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function loadSymbolLesson(key: string): Promise<SymbolLesson | null> {
+  return (await loadLessons())[key] ?? null;
+}
+
+export async function saveSymbolLesson(key: string, lesson: SymbolLesson): Promise<void> {
+  const all = await loadLessons();
+  all[key] = lesson;
+  // Drop the oldest entries once the cache grows past its cap (insertion order).
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_LESSONS))) delete all[k];
+  await AsyncStorage.setItem(LESSON_KEY, JSON.stringify(all));
 }
 
 // Whether the shared iCloud store is active right now (for a Settings indicator).

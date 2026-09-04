@@ -20,6 +20,7 @@ import { useStyles, useTheme } from '../ThemeContext';
 import { iCloudStatus, Settings } from '../storage';
 import { exportBackup, importBackup } from '../backup';
 import { findLanguage } from '../languages';
+import { hasDailySymbols } from '../symbols';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import { UI_LANGS } from '../i18n';
@@ -35,6 +36,9 @@ type Props = {
   setTheme: (mode: 'light' | 'dark' | 'system') => void;
   setPro: (value: boolean) => void;
   setEmergencyEnabled: (value: boolean) => void;
+  setDailySymbols: (value: 0 | 1 | 3) => void;
+  /** Open the current symbol-of-the-day card. */
+  onShowSymbol: () => void;
   purchasePro: () => void;
   restorePurchases: () => void;
   /** Re-read the stores after an import replaced what is on disk. */
@@ -52,6 +56,8 @@ export function SettingsScreen({
   setTheme,
   setPro,
   setEmergencyEnabled,
+  setDailySymbols,
+  onShowSymbol,
   purchasePro,
   restorePurchases,
   onImported,
@@ -251,6 +257,47 @@ export function SettingsScreen({
           <Text style={[styles.hint, { marginTop: 0 }]}>{t('emergency.settingsHint')}</Text>
         </View>
 
+        {/* Symbol of the day — only for Han-script goal languages; the Coach
+            pushes one or three characters a day as notifications. */}
+        <Text style={styles.sectionLabel}>{t('symbol.title').toUpperCase()}</Text>
+        <View style={styles.card}>
+          {hasDailySymbols(settings.goalLanguage) ? (
+            <>
+              <View style={styles.modeGrid}>
+                {([
+                  { value: 0 as const, icon: 'notifications-off-outline' as const, label: t('symbol.off') },
+                  { value: 1 as const, icon: 'sunny-outline' as const, label: t('symbol.once') },
+                  { value: 3 as const, icon: 'notifications-outline' as const, label: t('symbol.thrice') },
+                ]).map((m) => {
+                  const isActive = settings.dailySymbols === m.value;
+                  return (
+                    <Pressable
+                      key={m.value}
+                      style={[styles.modeTile, styles.modeTileStack, isActive && styles.langTileActive]}
+                      onPress={() => setDailySymbols(m.value)}
+                    >
+                      <Ionicons
+                        name={m.icon}
+                        size={22}
+                        color={isActive ? theme.colors.accent : theme.colors.textMuted}
+                      />
+                      <Text style={[styles.langName, isActive && styles.langNameActive]}>
+                        {m.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable style={[styles.primaryBtn, { marginTop: 12 }]} onPress={onShowSymbol}>
+                <Text style={styles.primaryBtnText}>{t('symbol.show')}</Text>
+              </Pressable>
+              <Text style={styles.hint}>{t('symbol.settingsHint')}</Text>
+            </>
+          ) : (
+            <Text style={[styles.hint, { marginTop: 0 }]}>{t('symbol.notHanzi')}</Text>
+          )}
+        </View>
+
         <Text style={styles.sectionLabel}>{t('settings.parlaPro')}</Text>
         <View style={styles.card}>
           <Text style={[styles.status, settings.isPro ? styles.statusActive : styles.statusFree]}>
@@ -430,6 +477,7 @@ function makeStyles(theme: Theme) {
   dropText: { color: theme.colors.text, fontSize: 15, fontWeight: '600', flex: 1 },
   dropTextActive: { color: theme.colors.accent },
   modeGrid: { flexDirection: 'row', gap: 10 },
+  modeTileStack: { flexDirection: 'column', gap: 2, paddingHorizontal: 4 },
   modeTile: {
     flex: 1,
     flexDirection: 'row',
