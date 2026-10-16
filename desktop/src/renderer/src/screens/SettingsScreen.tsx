@@ -16,6 +16,7 @@ import {
   CloudOff,
 } from 'lucide-react';
 import { Settings, iCloudStatus } from '../storage';
+import { exportBackup, importBackup } from '../backup';
 import { findLanguage } from '../languages';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
@@ -34,6 +35,8 @@ type Props = {
   setPro: (value: boolean) => void;
   purchasePro: () => void;
   restorePurchases: () => void;
+  /** Re-read the stores after an import replaced what is on disk. */
+  onImported: () => void;
 };
 
 export function SettingsScreen({
@@ -49,6 +52,7 @@ export function SettingsScreen({
   setPro,
   purchasePro,
   restorePurchases,
+  onImported,
 }: Props) {
   const t = useT();
   const [picker, setPicker] = useState<'input' | 'learn' | null>(null);
@@ -61,6 +65,8 @@ export function SettingsScreen({
     electron: string;
   } | null>(null);
   const [sync, setSync] = useState<{ linked: boolean; available: boolean } | null>(null);
+  const [backupBusy, setBackupBusy] = useState<'export' | 'import' | null>(null);
+  const [backupNote, setBackupNote] = useState<string | null>(null);
 
   useEffect(() => {
     window.parla?.info().then(setInfo).catch(() => setInfo(null));
@@ -72,6 +78,34 @@ export function SettingsScreen({
     { label: 'Platform', value: info?.platform ?? navigator.platform },
     { label: 'Electron', value: info?.electron ?? '—' },
   ];
+
+  async function runExport() {
+    setBackupBusy('export');
+    setBackupNote(null);
+    try {
+      await exportBackup();
+    } catch (e: any) {
+      setBackupNote(e?.message ?? String(e));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
+
+  async function runImport() {
+    setBackupBusy('import');
+    setBackupNote(null);
+    try {
+      const added = await importBackup(t('backup.invalid'));
+      if (added) {
+        onImported();
+        setBackupNote(t('backup.imported', added));
+      }
+    } catch (e: any) {
+      setBackupNote(e?.message ?? String(e));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
 
   async function copyDebug() {
     const text = [...debugRows.map((r) => `${r.label}: ${r.value}`), `Data: ${info?.dataDir ?? ''}`].join('\n');
@@ -210,6 +244,17 @@ export function SettingsScreen({
             {t('settings.restorePurchases')}
           </button>
           <p className="hint">{t('settings.proHint')}</p>
+        </div>
+
+        <div className="label">{t('settings.backup').toUpperCase()}</div>
+        <div className="scard">
+          <button className="primary-btn" onClick={runExport} disabled={backupBusy !== null}>
+            {t('settings.exportBackup')}
+          </button>
+          <button className="text-btn" onClick={runImport} disabled={backupBusy !== null}>
+            {t('settings.importBackup')}
+          </button>
+          <p className="hint">{backupNote ?? t('settings.backupHint')}</p>
         </div>
 
         <div className="label">{t('settings.about').toUpperCase()}</div>

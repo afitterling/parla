@@ -17,20 +17,23 @@ import { useStyles, useTheme } from '../ThemeContext';
 import {
   FREE_PER_HOUR,
   isPaywallActive,
+  DialogMsg,
   loadPinned,
+  loadRecentDialog,
   PhraseItem,
-  PinnedMsg,
   recordUsage,
   savePinned,
+  saveRecentDialog,
   Settings,
   usageInLastHour,
   VocabItem,
 } from '../storage';
-import { findLanguage } from '../languages';
+import { findLanguage, speechLocale } from '../languages';
 import { useRecorder } from '../useRecorder';
 import { Paywall } from '../components/Paywall';
 import { BusyOverlay } from '../components/BusyOverlay';
 import { LanguagePicker } from '../components/LanguagePicker';
+import { SpeakButton } from '../components/SpeakButton';
 import { useT } from '../i18n/I18nContext';
 import {
   breakdownSentence,
@@ -48,11 +51,18 @@ type Msg = {
   id: string;
   role: 'user' | 'ai';
   text: string;
+  createdAt: number;
+  // The pair the card was spoken in. Carried on the card rather than read off
+  // the current setup, so a language switch can never re-stamp what came
+  // before it — and so the render can drop what belongs to another pair.
+  lang: string;
+  inputLang: string;
   pinyin?: string;
   translation?: string;
   vocab?: VocabSuggestion[];
-  // Re-shown from a previous session's pins — displayed, but not part of the
-  // live conversation sent to the model.
+  // Re-shown from a previous session (pinned card or recent-history window).
+  // Still part of the conversation sent to the model — restoring is what lets
+  // the dialog continue rather than start over.
   restored?: boolean;
 };
 
@@ -65,6 +75,7 @@ type Props = {
   onChangeGoalLanguage: (code: string) => void;
   onSwapLanguages: () => void;
   onPurchasePro: () => void;
+  setDialogSort: (order: 'asc' | 'desc') => void;
   tagSuggestions: string[];
   contentLangCodes: string[]; // languages with saved content — shown on top of the input picker
 };
@@ -78,6 +89,7 @@ export function DialogScreen({
   onChangeGoalLanguage,
   onSwapLanguages,
   onPurchasePro,
+  setDialogSort,
   tagSuggestions,
   contentLangCodes,
 }: Props) {
@@ -114,35 +126,86 @@ export function DialogScreen({
   const [quotaLeft, setQuotaLeft] = useState<number | null>(null);
   // Pinned cards — persisted, restored into the dialog on every mount (the
   // dialog itself is ephemeral: it resets on tab switches and app restarts).
-  const [pins, setPins] = useState<PinnedMsg[]>([]);
+  const [pins, setPins] = useState<DialogMsg[]>([]);
   const pinnedIds = new Set(pins.map((p) => p.id));
 
+  // The cards spoken in the pair currently set up — the only ones this screen
+  // deals with: what it lists, what it counts as empty, and what history the
+  // model is given. A second gate behind the restore filter, so a reply that
+  // lands after a switch, or a card from a restore still in flight, can never
+  // surface under a pair it was not spoken in.
+  const current = messages.filter(
+    (m) => m.lang === goalLang.code && m.inputLang === inputLang.code
+  );
+
+  // Guards the auto-save below so the restore itself doesn't immediately write
+  // back what it just read. Cleared again on a language switch, so the save
+  // effect can't tag the outgoing pair's cards with the incoming pair.
+  const hydrated = useRef(false);
+  // The other pairs' recent cards, held aside so writing this pair's window
+  // back doesn't drop theirs.
+  const otherRecent = useRef<DialogMsg[]>([]);
+
+  // A conversation belongs to exactly one input→goal pair, and only the pair
+  // currently set up is shown — de → zh cards have no place in an en → en
+  // dialog. Re-runs on a switch, which swaps the visible conversation.
   useEffect(() => {
     let active = true;
+    hydrated.current = false;
     (async () => {
-      const stored = await loadPinned();
+      const [storedPins, storedRecent] = await Promise.all([loadPinned(), loadRecentDialog()]);
       if (!active) return;
-      setPins(stored);
-      setMessages((prev) =>
-        prev.length > 0
-          ? prev
-          : [...stored]
-              .sort((a, b) => a.createdAt - b.createdAt)
-              .map((p) => ({
-                id: p.id,
-                role: p.role,
-                text: p.text,
-                pinyin: p.pinyin,
-                translation: p.translation,
-                vocab: p.vocab,
-                restored: true,
-              }))
+      const mine = (m: DialogMsg) => m.lang === goalLang.code && m.inputLang === inputLang.code;
+      setPins(storedPins);
+      otherRecent.current = storedRecent.filter((m) => !mine(m));
+      // The two stores overlap whenever a card in the recent window is also
+      // pinned. One entry per id, and the recent copy wins: it carries the
+      // real creation time, while a pin's is the moment it was pinned.
+      const byId = new Map<string, DialogMsg>();
+      for (const m of storedPins.filter(mine)) byId.set(m.id, m);
+      for (const m of storedRecent.filter(mine)) byId.set(m.id, m);
+      setMessages(
+        [...byId.values()]
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .map((m) => ({
+            id: m.id,
+            role: m.role,
+            text: m.text,
+            createdAt: m.createdAt,
+            pinyin: m.pinyin,
+            translation: m.translation,
+            vocab: m.vocab,
+            lang: m.lang,
+            inputLang: m.inputLang,
+            restored: true,
+          }))
       );
+      hydrated.current = true;
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [goalLang.code, inputLang.code]);
+
+  // Persist the tail of the dialog on every change, so a tab switch or a
+  // restart comes back where it left off. saveRecentDialog trims to the window.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    saveRecentDialog([
+      ...otherRecent.current,
+      ...messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text,
+        pinyin: m.pinyin,
+        translation: m.translation,
+        vocab: m.vocab,
+        lang: m.lang,
+        inputLang: m.inputLang,
+        createdAt: m.createdAt,
+      })),
+    ]);
+  }, [messages]);
 
   function togglePin(m: Msg) {
     setPins((prev) => {
@@ -158,9 +221,9 @@ export function DialogScreen({
               pinyin: m.pinyin,
               translation: m.translation,
               vocab: m.vocab,
-              lang: goalLang.code,
-              inputLang: inputLang.code,
-              createdAt: Date.now(),
+              lang: m.lang,
+              inputLang: m.inputLang,
+              createdAt: m.createdAt,
             },
           ];
       savePinned(next);
@@ -187,15 +250,25 @@ export function DialogScreen({
     return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   }
 
-  function scrollToEnd() {
-    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+  // Newest-first puts the latest card at the top, so "scroll to the new one"
+  // means the opposite end of the list.
+  function scrollToNewest() {
+    requestAnimationFrame(() =>
+      settings.dialogSort === 'desc'
+        ? scrollRef.current?.scrollTo({ y: 0, animated: true })
+        : scrollRef.current?.scrollToEnd({ animated: true })
+    );
   }
 
+  // Always chronological, whatever the display order — and restored cards are
+  // included, which is what lets a relaunch continue the conversation.
   function toHistory(msgs: Msg[]): ChatTurn[] {
-    return msgs.filter((m) => !m.restored).map((m) => ({
-      role: m.role === 'ai' ? 'assistant' : 'user',
-      content: m.text,
-    }));
+    return [...msgs]
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((m) => ({
+        role: m.role === 'ai' ? 'assistant' : 'user',
+        content: m.text,
+      }));
   }
 
   function cancel() {
@@ -229,6 +302,9 @@ export function DialogScreen({
       const aiMsg: Msg = {
         id: newId(),
         role: 'ai',
+        createdAt: Date.now(),
+        lang: goalLang.code,
+        inputLang: inputLang.code,
         text: reply.target,
         pinyin: reply.pinyin,
         translation: reply.translation,
@@ -236,7 +312,7 @@ export function DialogScreen({
       };
       setMessages((prev) => [...prev, aiMsg]);
       await recordUsage();
-      scrollToEnd();
+      scrollToNewest();
     } catch (e: any) {
       if (cancelledRef.current) {
         // User cancelled — clear silently, no error.
@@ -249,9 +325,12 @@ export function DialogScreen({
   }
 
   async function startConversation() {
-    // Keep the restored pinned cards visible — only the live turns reset.
-    setMessages((prev) => prev.filter((m) => m.restored));
-    await askAI([]);
+    // Keep the restored cards visible — only the live turns reset. Their
+    // history goes to the model too, so this resumes where you left off rather
+    // than greeting you from scratch.
+    const kept = current.filter((m) => m.restored);
+    setMessages(kept);
+    await askAI(toHistory(kept));
   }
 
   async function onMicPress() {
@@ -298,10 +377,17 @@ export function DialogScreen({
   }
 
   async function sendUserText(text: string) {
-    const userMsg: Msg = { id: newId(), role: 'user', text };
-    const next = [...messages, userMsg];
+    const userMsg: Msg = {
+      id: newId(),
+      role: 'user',
+      createdAt: Date.now(),
+      text,
+      lang: goalLang.code,
+      inputLang: inputLang.code,
+    };
+    const next = [...current, userMsg];
     setMessages(next);
-    scrollToEnd();
+    scrollToNewest();
     await askAI(toHistory(next));
   }
 
@@ -376,6 +462,11 @@ export function DialogScreen({
 
   const recording = recorder.state === 'recording';
   const disabled = busy !== null;
+  // Card order is a persisted preference: oldest first reads like a transcript,
+  // newest first puts the latest reply under your thumb without scrolling.
+  const shown = [...current].sort((a, b) =>
+    settings.dialogSort === 'desc' ? b.createdAt - a.createdAt : a.createdAt - b.createdAt
+  );
 
   return (
     <KeyboardAvoidingView
@@ -399,6 +490,20 @@ export function DialogScreen({
             onPress={() => setMode('ask')}
           />
         </View>
+        <Pressable
+          style={styles.quotaChip}
+          onPress={() => setDialogSort(settings.dialogSort === 'asc' ? 'desc' : 'asc')}
+          hitSlop={6}
+          accessibilityLabel={t(
+            settings.dialogSort === 'asc' ? 'dialog.sortAsc' : 'dialog.sortDesc'
+          )}
+        >
+          <Ionicons
+            name={settings.dialogSort === 'asc' ? 'arrow-down' : 'arrow-up'}
+            size={14}
+            color={theme.colors.accent}
+          />
+        </Pressable>
         <View style={styles.quotaChip}>
           <Ionicons name="flash-outline" size={13} color={theme.colors.accent} />
           <Text style={styles.quotaText}>
@@ -465,11 +570,11 @@ export function DialogScreen({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {messages.every((m) => m.restored) && (
+        {current.every((m) => m.restored) && (
           // No live conversation yet. With restored pinned cards present, a
           // compact variant keeps the start button reachable without the hero.
-          <View style={[styles.empty, messages.length > 0 && styles.emptyCompact]}>
-            {messages.length === 0 && (
+          <View style={[styles.empty, current.length > 0 && styles.emptyCompact]}>
+            {current.length === 0 && (
               <>
                 <Ionicons name="mic-outline" size={56} color={theme.colors.accent} />
                 <Text style={styles.emptyTitle}>{t('dialog.readyTitle')}</Text>
@@ -486,7 +591,7 @@ export function DialogScreen({
           </View>
         )}
 
-        {messages.map((m) =>
+        {shown.map((m) =>
           m.role === 'ai' ? (
             <AiBubble
               key={m.id}
@@ -514,6 +619,7 @@ export function DialogScreen({
               saved={saved.has(m.text)}
               pinned={pinnedIds.has(m.id)}
               onTogglePin={() => togglePin(m)}
+              speakLocale={mode === 'free' ? speechLocale(goalLang) : undefined}
             />
           )
         )}
@@ -704,7 +810,17 @@ function AiBubble({
     <View style={[styles.bubble, styles.aiBubble]}>
       <View style={styles.bubbleHeader}>
         <Text style={styles.aiLabel}>{t('bubble.parla')}</Text>
-        <PinButton pinned={pinned} onPress={onTogglePin} />
+        <View style={styles.bubbleActions}>
+          {/* Read the reply aloud in the goal language — same device TTS the
+              Vocabulary and Phrases rows use. */}
+          <SpeakButton
+            text={msg.text}
+            locale={speechLocale(findLanguage(langCode))}
+            size={14}
+            style={styles.bubbleSpeak}
+          />
+          <PinButton pinned={pinned} onPress={onTogglePin} />
+        </View>
       </View>
       <Text style={styles.aiText}>{msg.text}</Text>
       {msg.pinyin ? (
@@ -885,12 +1001,16 @@ function UserBubble({
   saved,
   pinned,
   onTogglePin,
+  speakLocale,
 }: {
   msg: Msg;
   onSave: (text: string) => void;
   saved: boolean;
   pinned: boolean;
   onTogglePin: () => void;
+  /** Set only when the learner's own text is in the goal language (free mode) —
+      hearing your own native sentence back is noise. */
+  speakLocale?: string;
 }) {
   const t = useT();
   const styles = useStyles(makeStyles);
@@ -898,7 +1018,17 @@ function UserBubble({
   return (
     <View style={[styles.bubble, styles.userBubble]}>
       <View style={styles.bubbleHeader}>
-        <PinButton pinned={pinned} onPress={onTogglePin} />
+        <View style={styles.bubbleActions}>
+          <PinButton pinned={pinned} onPress={onTogglePin} />
+          {!!speakLocale && (
+            <SpeakButton
+              text={msg.text}
+              locale={speakLocale}
+              size={14}
+              style={styles.bubbleSpeak}
+            />
+          )}
+        </View>
         <Text style={styles.userLabel}>{t('bubble.you')}</Text>
       </View>
       <Text style={styles.userText}>{msg.text}</Text>
@@ -1034,6 +1164,9 @@ function makeStyles(theme: Theme) {
     gap: 12,
     marginBottom: 4,
   },
+  bubbleActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // Shrinks SpeakButton's default 38pt disc to something that sits in a header row.
+  bubbleSpeak: { width: 28, height: 28 },
   aiLabel: { color: theme.colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   userLabel: {
     color: theme.colors.accent2,

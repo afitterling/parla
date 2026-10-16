@@ -25,10 +25,11 @@ import {
   VocabItem,
   newId,
 } from '../storage';
-import { findLanguage } from '../languages';
+import { findLanguage, speechLocale } from '../languages';
 import { useRecorder } from '../recorder';
 import { Paywall } from '../components/Paywall';
 import { LanguagePicker } from '../components/LanguagePicker';
+import { SpeakButton } from '../components/SpeakButton';
 import { useT } from '../i18n/I18nContext';
 import {
   breakdownSentence,
@@ -387,7 +388,13 @@ export function DialogScreen({
               tagSuggestions={tagSuggestions}
             />
           ) : (
-            <UserBubble key={m.id} msg={m} onSave={saveTranscription} saved={saved.has(m.text)} />
+            <UserBubble
+              key={m.id}
+              msg={m}
+              onSave={saveTranscription}
+              saved={saved.has(m.text)}
+              speakLocale={mode === 'free' ? speechLocale(goalLang) : undefined}
+            />
           )
         )}
 
@@ -527,7 +534,17 @@ function AiBubble({
 
   return (
     <div className="bubble ai">
-      <div className="b-label ai">{t('bubble.parla')}</div>
+      <div className="b-head">
+        <div className="b-label ai">{t('bubble.parla')}</div>
+        {/* Read the reply aloud in the goal language — same TTS the Phrases
+            rows use. */}
+        <SpeakButton
+          text={msg.text}
+          locale={speechLocale(findLanguage(langCode))}
+          size={14}
+          className="b-speak"
+        />
+      </div>
       <div className="b-target">{msg.text}</div>
       {!!msg.pinyin && <div className="b-pinyin">{msg.pinyin}</div>}
       {!!msg.translation && <div className="b-trans">{msg.translation}</div>}
@@ -643,15 +660,24 @@ function UserBubble({
   msg,
   onSave,
   saved,
+  speakLocale,
 }: {
   msg: Msg;
   onSave: (text: string) => void;
   saved: boolean;
+  /** Set only when the learner's own text is in the goal language (free mode) —
+      hearing your own native sentence back is noise. */
+  speakLocale?: string;
 }) {
   const t = useT();
   return (
     <div className="bubble user">
-      <div className="b-label user">{t('bubble.you')}</div>
+      <div className="b-head">
+        {!!speakLocale && (
+          <SpeakButton text={msg.text} locale={speakLocale} size={14} className="b-speak" />
+        )}
+        <div className="b-label user">{t('bubble.you')}</div>
+      </div>
       <div className="b-user-text">{msg.text}</div>
       <button
         className={`user-save${saved ? ' done' : ''}`}

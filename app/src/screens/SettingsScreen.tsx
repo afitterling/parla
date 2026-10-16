@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,8 +17,10 @@ import Constants from 'expo-constants';
 import * as Clipboard from 'expo-clipboard';
 import { Theme } from '../theme';
 import { useStyles, useTheme } from '../ThemeContext';
-import { Settings } from '../storage';
+import { iCloudStatus, Settings } from '../storage';
+import { exportBackup, importBackup } from '../backup';
 import { findLanguage } from '../languages';
+import { hasDailySymbols } from '../symbols';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import { UI_LANGS } from '../i18n';
@@ -32,8 +36,13 @@ type Props = {
   setTheme: (mode: 'light' | 'dark' | 'system') => void;
   setPro: (value: boolean) => void;
   setEmergencyEnabled: (value: boolean) => void;
+  setDailySymbols: (value: 0 | 1 | 3) => void;
+  /** Open the current symbol-of-the-day card. */
+  onShowSymbol: () => void;
   purchasePro: () => void;
   restorePurchases: () => void;
+  /** Re-read the stores after an import replaced what is on disk. */
+  onImported: () => void;
 };
 
 export function SettingsScreen({
@@ -47,8 +56,11 @@ export function SettingsScreen({
   setTheme,
   setPro,
   setEmergencyEnabled,
+  setDailySymbols,
+  onShowSymbol,
   purchasePro,
   restorePurchases,
+  onImported,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -56,6 +68,21 @@ export function SettingsScreen({
   const [picker, setPicker] = useState<'input' | 'learn' | null>(null);
   const [uiLangOpen, setUiLangOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [backupBusy, setBackupBusy] = useState<'export' | 'import' | null>(null);
+  // Which iCloud container this build talks to. When a build looks like it lost
+  // its library, this is the first thing to check — the bundle id can change
+  // without the container changing, and vice versa.
+  const [sync, setSync] = useState<{
+    linked: boolean;
+    available: boolean;
+    container: string;
+  } | null>(null);
+
+  useEffect(() => {
+    iCloudStatus()
+      .then(setSync)
+      .catch(() => setSync(null));
+  }, []);
 
   // App / build info — baked in from app.json at build time (see scripts/setVersion.sh).
   const appVersion = Constants.expoConfig?.version ?? '—';
@@ -66,8 +93,39 @@ export function SettingsScreen({
     { label: 'Version', value: String(appVersion) },
     { label: 'Build', value: String(buildNumber) },
     { label: 'Bundle', value: String(bundleId) },
+    { label: 'iCloud', value: sync ? sync.container || '—' : '…' },
+    {
+      label: 'Sync',
+      value: sync ? (sync.available ? 'on' : sync.linked ? 'off' : 'not linked') : '…',
+    },
     { label: 'System', value: systemInfo },
   ];
+
+  async function runExport() {
+    setBackupBusy('export');
+    try {
+      await exportBackup(t('backup.shareTitle'));
+    } catch (e: any) {
+      Alert.alert(t('settings.backup'), e?.message ?? String(e));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
+
+  async function runImport() {
+    setBackupBusy('import');
+    try {
+      const added = await importBackup(t('backup.invalid'));
+      if (added) {
+        onImported();
+        Alert.alert(t('settings.backup'), t('backup.imported', added));
+      }
+    } catch (e: any) {
+      Alert.alert(t('settings.backup'), e?.message ?? String(e));
+    } finally {
+      setBackupBusy(null);
+    }
+  }
 
   async function copyDebug() {
     await Clipboard.setStringAsync(debugRows.map((r) => `${r.label}: ${r.value}`).join('\n'));
@@ -199,6 +257,47 @@ export function SettingsScreen({
           <Text style={[styles.hint, { marginTop: 0 }]}>{t('emergency.settingsHint')}</Text>
         </View>
 
+        {/* Symbol of the day — only for Han-script goal languages; the Coach
+            pushes one or three characters a day as notifications. */}
+        <Text style={styles.sectionLabel}>{t('symbol.title').toUpperCase()}</Text>
+        <View style={styles.card}>
+          {hasDailySymbols(settings.goalLanguage) ? (
+            <>
+              <View style={styles.modeGrid}>
+                {([
+                  { value: 0 as const, icon: 'notifications-off-outline' as const, label: t('symbol.off') },
+                  { value: 1 as const, icon: 'sunny-outline' as const, label: t('symbol.once') },
+                  { value: 3 as const, icon: 'notifications-outline' as const, label: t('symbol.thrice') },
+                ]).map((m) => {
+                  const isActive = settings.dailySymbols === m.value;
+                  return (
+                    <Pressable
+                      key={m.value}
+                      style={[styles.modeTile, styles.modeTileStack, isActive && styles.langTileActive]}
+                      onPress={() => setDailySymbols(m.value)}
+                    >
+                      <Ionicons
+                        name={m.icon}
+                        size={22}
+                        color={isActive ? theme.colors.accent : theme.colors.textMuted}
+                      />
+                      <Text style={[styles.langName, isActive && styles.langNameActive]}>
+                        {m.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable style={[styles.primaryBtn, { marginTop: 12 }]} onPress={onShowSymbol}>
+                <Text style={styles.primaryBtnText}>{t('symbol.show')}</Text>
+              </Pressable>
+              <Text style={styles.hint}>{t('symbol.settingsHint')}</Text>
+            </>
+          ) : (
+            <Text style={[styles.hint, { marginTop: 0 }]}>{t('symbol.notHanzi')}</Text>
+          )}
+        </View>
+
         <Text style={styles.sectionLabel}>{t('settings.parlaPro')}</Text>
         <View style={styles.card}>
           <Text style={[styles.status, settings.isPro ? styles.statusActive : styles.statusFree]}>
@@ -224,6 +323,29 @@ export function SettingsScreen({
           </Pressable>
 
           <Text style={styles.hint}>{t('settings.proHint')}</Text>
+        </View>
+
+        <Text style={styles.sectionLabel}>{t('settings.backup').toUpperCase()}</Text>
+        <View style={styles.card}>
+          <Pressable
+            style={styles.primaryBtn}
+            onPress={runExport}
+            disabled={backupBusy !== null}
+          >
+            {backupBusy === 'export' ? (
+              <ActivityIndicator size="small" color="#001b1f" />
+            ) : (
+              <Text style={styles.primaryBtnText}>{t('settings.exportBackup')}</Text>
+            )}
+          </Pressable>
+          <Pressable style={styles.textBtn} onPress={runImport} disabled={backupBusy !== null}>
+            {backupBusy === 'import' ? (
+              <ActivityIndicator size="small" color={theme.colors.accent} />
+            ) : (
+              <Text style={styles.textBtnText}>{t('settings.importBackup')}</Text>
+            )}
+          </Pressable>
+          <Text style={styles.hint}>{t('settings.backupHint')}</Text>
         </View>
 
         <Text style={styles.sectionLabel}>{t('settings.about').toUpperCase()}</Text>
@@ -355,6 +477,7 @@ function makeStyles(theme: Theme) {
   dropText: { color: theme.colors.text, fontSize: 15, fontWeight: '600', flex: 1 },
   dropTextActive: { color: theme.colors.accent },
   modeGrid: { flexDirection: 'row', gap: 10 },
+  modeTileStack: { flexDirection: 'column', gap: 2, paddingHorizontal: 4 },
   modeTile: {
     flex: 1,
     flexDirection: 'row',

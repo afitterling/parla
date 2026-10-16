@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>0.9.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleURLTypes</key>
@@ -27,12 +27,14 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.afitterling.sprachapp</string>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>32</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -44,13 +46,19 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Parla nutzt die Kamera, um Text zu fotografieren und daraus Vokabeln und Sätze zu erstellen.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Parla zeigt im Notfall deinen Standort an, damit du ihn Helfern zeigen kannst.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Parla braucht dein Mikrofon, um deine Sprache aufzunehmen und zu transkribieren.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Parla wertet keine Bewegungsdaten aus. iOS verlangt diesen Hinweis, weil eine mitgelieferte Systembibliothek Bewegungs-APIs referenziert.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Parla liest Text aus einem Foto, um daraus Vokabeln und Sätze zu erstellen.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
-		<key>iCloud.com.afitterling.sprachapp</key>
+		<key>iCloud.tech.sp33c.parla.dev</key>
 		<dict>
 			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
 			<true/>

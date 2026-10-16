@@ -10,6 +10,7 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
 
 type ParlaICloudNative = {
   isAvailable(): Promise<boolean>;
+  containerId(): string;
   readFile(name: string): Promise<string | null>;
   writeFile(name: string, content: string): Promise<void>;
 };
@@ -29,6 +30,16 @@ export async function isAvailable(): Promise<boolean> {
     return await native.isAvailable();
   } catch {
     return false;
+  }
+}
+
+// Which iCloud container this build reads and writes. Empty when the native
+// module isn't linked (web, Expo Go) — there is no container at all then.
+export function containerId(): string {
+  try {
+    return native?.containerId() ?? '';
+  } catch {
+    return '';
   }
 }
 

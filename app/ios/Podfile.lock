@@ -1,7 +1,9 @@
 PODS:
-  - EXConstants (56.0.18):
+  - EXApplication (56.0.3):
     - ExpoModulesCore
-  - Expo (56.0.12):
+  - EXConstants (56.0.27):
+    - ExpoModulesCore
+  - Expo (56.0.23):
     - ExpoModulesCore
     - ExpoModulesJSI
     - hermes-engine
@@ -27,29 +29,31 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoAsset (56.0.17):
+  - ExpoAsset (56.0.25):
     - ExpoModulesCore
-  - ExpoAudio (56.0.12):
+  - ExpoAudio (56.0.13):
     - ExpoModulesCore
   - ExpoClipboard (56.0.4):
     - ExpoModulesCore
-  - ExpoDomWebView (56.0.5):
+  - ExpoDocumentPicker (56.0.4):
     - ExpoModulesCore
-  - ExpoFileSystem (56.0.8):
+  - ExpoDomWebView (56.0.6):
+    - ExpoModulesCore
+  - ExpoFileSystem (56.0.11):
     - ExpoModulesCore
   - ExpoFont (56.0.7):
     - ExpoModulesCore
-  - ExpoImagePicker (56.0.22):
+  - ExpoImagePicker (56.0.25):
     - ExpoModulesCore
   - ExpoKeepAwake (56.0.3):
     - ExpoModulesCore
   - ExpoLocalization (56.0.6):
     - ExpoModulesCore
-  - ExpoLocation (56.0.21):
+  - ExpoLocation (56.0.26):
     - ExpoModulesCore
-  - ExpoLogBox (56.0.13):
+  - ExpoLogBox (56.0.14):
     - React-Core
-  - ExpoModulesCore (56.0.17):
+  - ExpoModulesCore (56.0.27):
     - ExpoModulesJSI
     - hermes-engine
     - RCTRequired
@@ -73,12 +77,14 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoModulesJSI (56.0.10):
+  - ExpoModulesJSI (56.0.14):
     - React-Core
     - ReactCommon
-  - ExpoModulesWorklets (56.0.17):
+  - ExpoModulesWorklets (56.0.27):
     - ExpoModulesCore
     - ExpoModulesJSI
+  - ExpoNotifications (56.0.26):
+    - ExpoModulesCore
   - ExpoScreenOrientation (56.0.5):
     - ExpoModulesCore
     - hermes-engine
@@ -102,7 +108,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoSharing (56.0.18):
+  - ExpoSharing (56.0.26):
     - ExpoModulesCore
   - ExpoSpeech (56.0.3):
     - ExpoModulesCore
@@ -1966,22 +1972,25 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - EXApplication (from `../node_modules/expo-application/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoAudio (from `../node_modules/expo-audio/ios`)
   - ExpoClipboard (from `../node_modules/expo-clipboard/ios`)
-  - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/dom-webview/ios`)"
+  - ExpoDocumentPicker (from `../node_modules/expo-document-picker/ios`)
+  - "ExpoDomWebView (from `../node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
   - ExpoImagePicker (from `../node_modules/expo-image-picker/ios`)
   - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
   - ExpoLocalization (from `../node_modules/expo-localization/ios`)
   - ExpoLocation (from `../node_modules/expo-location/ios/ExpoLocation.podspec`)
-  - "ExpoLogBox (from `../node_modules/expo/node_modules/@expo/log-box`)"
+  - "ExpoLogBox (from `../node_modules/@expo/log-box`)"
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
+  - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoScreenOrientation (from `../node_modules/expo-screen-orientation/ios`)
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSpeech (from `../node_modules/expo-speech/ios`)
@@ -2065,6 +2074,8 @@ DEPENDENCIES:
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
+  EXApplication:
+    :path: "../node_modules/expo-application/ios"
   EXConstants:
     :path: "../node_modules/expo-constants/ios"
   Expo:
@@ -2075,8 +2086,10 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-audio/ios"
   ExpoClipboard:
     :path: "../node_modules/expo-clipboard/ios"
+  ExpoDocumentPicker:
+    :path: "../node_modules/expo-document-picker/ios"
   ExpoDomWebView:
-    :path: "../node_modules/expo/node_modules/@expo/dom-webview/ios"
+    :path: "../node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
     :podspec: "../node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
   ExpoFont:
@@ -2090,13 +2103,15 @@ EXTERNAL SOURCES:
   ExpoLocation:
     :podspec: "../node_modules/expo-location/ios/ExpoLocation.podspec"
   ExpoLogBox:
-    :path: "../node_modules/expo/node_modules/@expo/log-box"
+    :path: "../node_modules/@expo/log-box"
   ExpoModulesCore:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesCore.podspec"
   ExpoModulesJSI:
     :path: "../node_modules/expo-modules-jsi/apple"
   ExpoModulesWorklets:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
+  ExpoNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   ExpoScreenOrientation:
     :path: "../node_modules/expo-screen-orientation/ios"
   ExpoSharing:
@@ -2260,24 +2275,27 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  EXConstants: e836b478e4f5c835f3c77921d8162e1918e2c06e
-  Expo: 885ec78d4827b0abf9b87c0a0308fbdf00ef8b8a
-  ExpoAsset: 1e436e9aee7015d5c6d203c1ddfe1adbb521a623
-  ExpoAudio: 8c4882515dee2f71d519ee64bb05c14945a5e1a2
+  EXApplication: e6040c92edc5522accd62852342e6b14742d42c0
+  EXConstants: 9d3531b15141ea2e24f4b48d51050291f83ccce7
+  Expo: 668a9b2aa9e6bfc2586f2a0e42d1705e4cfc6f1d
+  ExpoAsset: 248b72382c8285f02fd6fb6d62ff6d2179071023
+  ExpoAudio: 2970e2d332b52bfbb64d88564105df4b422c78a4
   ExpoClipboard: 342ae52697ff1cf89b8849bee624a9a320e77d3c
-  ExpoDomWebView: 27205be8754f9992913b8a9a08e65019f2207075
-  ExpoFileSystem: 9dc04ec1e11bc3c7b965d7feb2de12c789755c7b
+  ExpoDocumentPicker: caa9c7c1071dc31262d86a8fe48f51929d291a43
+  ExpoDomWebView: 4e53b05879dc73ba374f76bff93dd64c8a0d91b3
+  ExpoFileSystem: 9d47583cbcc53ab2411901c601cd0a7ca18b3c11
   ExpoFont: 274487aa78f8c65d6551e2558eca3ec6ce3432ce
-  ExpoImagePicker: c8b3c139b4946d44cebe5747f1d896ec3525b29c
+  ExpoImagePicker: 01521e86df3fa75ed2b1b46a000006a15c0ba89f
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
   ExpoLocalization: cf50efc436b2ec313510131c1ee0e778366d64b0
-  ExpoLocation: 5a75576d74fa6e491df56677369f99f3635dd3c5
-  ExpoLogBox: 63977cf56b04547c713535d2d4e9bbf2f012e3c6
-  ExpoModulesCore: 486dc1a2fdfc004b4be8eb3e9ad93782c43eb80a
-  ExpoModulesJSI: abc606cf32f6eeb4e2ad44ec3fc4b24143abd8f6
-  ExpoModulesWorklets: 25d712f4e0a4eb37397d46c0ff5b450eca897fd1
+  ExpoLocation: bf2d4ce37537e9d64a9a9fa348975b89b1ed93ba
+  ExpoLogBox: cdad5c9402a186574fb5924ea91df1f08ba9a98a
+  ExpoModulesCore: d26289a6121e466bd6ac80ff19ba881dc47a1fa3
+  ExpoModulesJSI: be5366379de5036c554db5f6478fc994da8f5ece
+  ExpoModulesWorklets: 706d2511ac0e91743314d8f2e47683a924ae92f3
+  ExpoNotifications: c26fd8557c759cec54abacfd54db48a4cffa70da
   ExpoScreenOrientation: 75ebc86da7f64e94d34d10a743acbd75f9814dd6
-  ExpoSharing: 89ff19115095e3eb8355d3a2dd6a21875e4b25df
+  ExpoSharing: 5e3ac486863cd9fd6d8a22b11295386609cc8d33
   ExpoSpeech: fe3706df8653ab8c16ff88251e33fab79b07a420
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: f99b86eb133a5b288028d854ccd11dcfcaab659d

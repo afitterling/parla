@@ -31,7 +31,9 @@ export type PhraseItem = {
 // A dialog card the learner pinned so it survives across sessions — the dialog
 // itself is ephemeral (state only), pinned cards are restored on the next
 // launch. Mirrors the dialog Msg shape plus the language pair and sync fields.
-export type PinnedMsg = {
+// A dialog card as it is stored. Backs both the pinned store and the rolling
+// recent-history store below.
+export type DialogMsg = {
   id: string;
   role: 'user' | 'ai';
   text: string;
@@ -47,7 +49,7 @@ export type PinnedMsg = {
   }[];
   lang: string; // goal language of the conversation when pinned
   inputLang: string;
-  createdAt: number; // when pinned — keeps the restore order stable
+  createdAt: number; // when the card was created — fixes the restore order
 };
 
 // An input→goal language combination the learner has actually saved content
@@ -111,6 +113,15 @@ export type Settings = {
   // screen (local-language phrases + location + two-way interpreter). Off by
   // default — it's opt-in via Settings.
   emergencyEnabled: boolean;
+  // Dialog card order: 'asc' oldest first (a transcript), 'desc' newest first
+  // (the latest reply without scrolling).
+  dialogSort: 'asc' | 'desc';
+  // Symbol of the day (Han-script goal languages only): how many characters a
+  // day the Coach pushes as notifications — 0 = off, 1 = morning, 3 = morning,
+  // midday and evening. See src/symbols.ts and src/notifications.ts.
+  dailySymbols: 0 | 1 | 3;
+  // Per goal language, when the sequence started (ms) — day 0 of the list.
+  dailySymbolStart: Record<string, number>;
 };
 
 // ── Storage backing ───────────────────────────────────────────────────────────
@@ -123,6 +134,7 @@ export type Settings = {
 const VOCAB_FILE = 'vocab.json';
 const PHRASE_FILE = 'phrases.json';
 const PINNED_FILE = 'pinned.json';
+const RECENT_FILE = 'recent.json';
 const SETTINGS_FILE = 'settings.json';
 const USAGE_FILE = 'usage.json';
 
@@ -192,7 +204,7 @@ function filledCount(o: Record<string, unknown>): number {
 // Union two record lists by id; on a clash keep the copy with more filled fields.
 // Never drops an item that exists on either side, so offline edits on either the
 // phone or the Mac survive a sync.
-function mergeById<T extends { id: string; createdAt?: number }>(a: T[], b: T[]): T[] {
+export function mergeById<T extends { id: string; createdAt?: number }>(a: T[], b: T[]): T[] {
   const map = new Map<string, T>();
   for (const it of a) if (it?.id) map.set(it.id, it);
   for (const it of b) {
@@ -269,7 +281,7 @@ export async function savePhrases(items: PhraseItem[]): Promise<void> {
   await writeRaw(PHRASE_FILE, JSON.stringify(items));
 }
 
-function normalizePinned(items: any[]): PinnedMsg[] {
+function normalizeDialogMsgs(items: any[]): DialogMsg[] {
   return items
     .filter((m) => m && typeof m.id === 'string' && typeof m.text === 'string')
     .map((m) => ({
@@ -277,19 +289,66 @@ function normalizePinned(items: any[]): PinnedMsg[] {
       role: m.role === 'user' ? 'user' : 'ai',
       vocab: Array.isArray(m.vocab) ? m.vocab : undefined,
       createdAt: Number(m.createdAt) || 0,
-    })) as PinnedMsg[];
+    })) as DialogMsg[];
 }
 
-export async function loadPinned(): Promise<PinnedMsg[]> {
-  const cloud = normalizePinned(parseArray(await readCloud(PINNED_FILE)));
-  const local = normalizePinned(parseArray(await readLocal(PINNED_FILE)));
+export async function loadPinned(): Promise<DialogMsg[]> {
+  const cloud = normalizeDialogMsgs(parseArray(await readCloud(PINNED_FILE)));
+  const local = normalizeDialogMsgs(parseArray(await readLocal(PINNED_FILE)));
   const merged = mergeById(cloud, local);
   await reconcile(PINNED_FILE, merged, cloud.length);
   return merged;
 }
 
-export async function savePinned(items: PinnedMsg[]): Promise<void> {
+export async function savePinned(items: DialogMsg[]): Promise<void> {
   await writeRaw(PINNED_FILE, JSON.stringify(items));
+}
+
+// ── Recent dialog ───────────────────────────────────────────────────────────
+// The dialog itself is ephemeral, and pinning every card you might want back is
+// work. The tail of the conversation is therefore kept automatically and
+// restored on the next launch, alongside the pinned cards.
+
+// Counted in exchanges — one of your messages plus whatever came back — because
+// half a turn is not useful context to return to.
+export const MAX_RECENT_EXCHANGES = 20;
+
+// Trim to the trailing window: walk back from the newest and cut once
+// MAX_RECENT_EXCHANGES of your own messages have been seen, so a restored
+// window always begins on one of your turns rather than mid-answer.
+export function trimToRecent<T extends { role: 'user' | 'ai' }>(msgs: T[]): T[] {
+  let turns = 0;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== 'user') continue;
+    turns += 1;
+    if (turns > MAX_RECENT_EXCHANGES) return msgs.slice(i + 1);
+  }
+  return msgs;
+}
+
+// One window per input→goal pair: the dialog only ever shows the cards of the
+// pair currently set up, so trimming across all of them would cut a pair's tail
+// short as soon as another one is talked to.
+export function trimRecentByPair(items: DialogMsg[]): DialogMsg[] {
+  const byPair = new Map<string, DialogMsg[]>();
+  for (const m of items) {
+    const key = `${m.inputLang}→${m.lang}`;
+    const list = byPair.get(key);
+    if (list) list.push(m);
+    else byPair.set(key, [m]);
+  }
+  return [...byPair.values()].flatMap(trimToRecent).sort((a, b) => a.createdAt - b.createdAt);
+}
+
+// Unlike the pinned store this is deliberately not merged across devices: it is
+// one rolling window, and unioning two devices' tails would interleave two
+// different conversations. readRaw already prefers the iCloud copy.
+export async function loadRecentDialog(): Promise<DialogMsg[]> {
+  return normalizeDialogMsgs(parseArray(await readRaw(RECENT_FILE)));
+}
+
+export async function saveRecentDialog(items: DialogMsg[]): Promise<void> {
+  await writeRaw(RECENT_FILE, JSON.stringify(trimRecentByPair(items)));
 }
 
 // Distinct tags ordered by most recent use (newest item that carries them
@@ -340,7 +399,19 @@ export async function loadSettings(): Promise<Settings> {
     theme: stored.theme === 'light' || stored.theme === 'dark' ? stored.theme : 'system',
     recentPairs: sanitizePairs(stored.recentPairs),
     emergencyEnabled: stored.emergencyEnabled === true,
+    dialogSort: stored.dialogSort === 'desc' ? 'desc' : 'asc',
+    dailySymbols: stored.dailySymbols === 3 ? 3 : stored.dailySymbols === 1 ? 1 : 0,
+    dailySymbolStart: sanitizeStarts(stored.dailySymbolStart),
   };
+}
+
+function sanitizeStarts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
 }
 
 // Older builds (and the desktop app) don't write `recentPairs` — accept anything
@@ -492,7 +563,56 @@ export function isPaywallActive(isPro: boolean): boolean {
   return !IS_DEV_ENV && !isPro;
 }
 
+// ── Symbol-of-the-day lessons ─────────────────────────────────────────────────
+// The Coach's explanation of a character, in the learner's language. A cache,
+// not library content: local only (AsyncStorage), keyed by goal language,
+// character and the language the explanation is written in.
+export type SymbolLesson = {
+  reading: string;
+  meaning: string;
+  examples: { text: string; reading: string; translation: string }[];
+  mnemonic: string;
+};
+
+const LESSON_KEY = 'parla.symbolLessons';
+const MAX_LESSONS = 400;
+
+export function lessonKey(lang: string, char: string, learnerLang: string): string {
+  return `${lang}:${char}:${learnerLang}`;
+}
+
+async function loadLessons(): Promise<Record<string, SymbolLesson>> {
+  try {
+    const raw = await AsyncStorage.getItem(LESSON_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function loadSymbolLesson(key: string): Promise<SymbolLesson | null> {
+  return (await loadLessons())[key] ?? null;
+}
+
+export async function saveSymbolLesson(key: string, lesson: SymbolLesson): Promise<void> {
+  const all = await loadLessons();
+  all[key] = lesson;
+  // Drop the oldest entries once the cache grows past its cap (insertion order).
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_LESSONS))) delete all[k];
+  await AsyncStorage.setItem(LESSON_KEY, JSON.stringify(all));
+}
+
 // Whether the shared iCloud store is active right now (for a Settings indicator).
-export async function iCloudStatus(): Promise<{ linked: boolean; available: boolean }> {
-  return { linked: iCloud.isLinked(), available: await iCloud.isAvailable() };
+export async function iCloudStatus(): Promise<{
+  linked: boolean;
+  available: boolean;
+  container: string;
+}> {
+  return {
+    linked: iCloud.isLinked(),
+    available: await iCloud.isAvailable(),
+    container: iCloud.containerId(),
+  };
 }
