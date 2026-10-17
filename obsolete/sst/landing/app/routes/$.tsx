@@ -32,6 +32,12 @@ export function loader({ request }: { request: Request }) {
   });
 }
 
+// A POST/PUT/DELETE to an unmatched path otherwise dies on "no `action` for route
+// routes/$" — the same 405 that reached the SST alerts from pingtray's /api/init.
+// Reusing the loader answers those exactly like a GET: 403 for scanner paths,
+// 404 for everything else.
+export const action = loader;
+
 export default function CatchAll() {
   // The loader always throws, so this never renders. It exists so the route is
   // treated as a page route rather than a resource route.
