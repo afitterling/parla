@@ -2,7 +2,7 @@
   "expo": {
     "name": "Parla",
     "slug": "sprachapp",
-    "version": "0.9.3",
+    "version": "0.9.4",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -39,7 +39,7 @@
         ]
       },
       "bundleIdentifier": "tech.sp33c.parla.dev",
-      "buildNumber": "33",
+      "buildNumber": "34",
       "usesAppleSignIn": true
     },
     "android": {
@@ -88,7 +88,7 @@
       "eas": {
         "projectId": "7a1ef937-99a2-49f0-b348-1f095849b078"
       },
-      "relayUrl": ""
+      "relayUrl": "https://hhrtmarsc0.execute-api.eu-central-1.amazonaws.com"
     },
     "owner": "afitterling"
   }

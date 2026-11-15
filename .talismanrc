@@ -40,7 +40,7 @@ fileignoreconfig:
 - filename: app/src/i18n/index.ts
   checksum: 3d3ac44c543892e6c6a4cbacde622c0af2b63c9ae4534800c320c7db16966e99
 - filename: app/ios/Parla.xcodeproj/project.pbxproj
-  checksum: 975df4811a731508ce21e053edf93567893dd9b21d2743ca6984af875c755fda
+  checksum: 21d6c68f7f4438d584d230839218fa69e41cb01c880815c34d0f5a515d5f8e42
 - filename: app/ios/Parla/Info.plist
-  checksum: 1f16647363de2cd3ddc6d5f00f839b771cc464dd907829a179d84c55927a0946
+  checksum: 579647986b0aef737495da5df0708646eb734bb0939c532445584f2a85a5bd90
 version: "1.0"
