@@ -49,6 +49,7 @@ import {
   syncSymbolNotifications,
 } from './src/notifications';
 import { currentSlotIndex, hasDailySymbols } from './src/symbols';
+import { useRelay } from './src/useRelay';
 
 type Tab = 'dialog' | 'vocab' | 'phrases' | 'settings';
 
@@ -91,6 +92,10 @@ export default function App() {
       setReady(true);
     })();
   }, []);
+
+  // Claude & agents: Sign in with Apple, push the library to the relay, and
+  // add the words agents queued. Inert until the user signs in.
+  const relay = useRelay({ ready, settings, vocab, phrases, setVocab, setPhrases });
 
   async function handleSaveSettings(next: Settings) {
     setSettings(next);
@@ -511,6 +516,7 @@ export default function App() {
             purchasePro={purchasePro}
             restorePurchases={restorePurchases}
             onImported={reloadStores}
+            relay={relay}
           />
         )}
       </View>

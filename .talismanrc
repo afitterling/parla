@@ -1,0 +1,36 @@
+fileignoreconfig:
+- filename: app/ios/Podfile.lock
+  checksum: e007a760c394641babdf329eb164900a7170c60729665deea29c1c833c58e171
+- filename: relay/src/relay.ts
+  checksum: 0dcc230b776e0233c73eb61ddfd7c6a7dc4a14d28230f1febd66c1cdf43f903a
+- filename: app/package-lock.json
+  checksum: e322f0d3b31c8994e306a2fa3610174a41b3b266739212325732ac00c4f89841
+- filename: relay/package-lock.json
+  checksum: ccec00c52b347abad4e8736cad845eeafbcf14ab86144ed8ee083503b10f42f0
+- filename: app/ios/Parla/Parla.entitlements
+  checksum: d37009af1e811619e0ccbc07fc02b8353b182852e1b086b2a685f3978f7504a2
+- filename: specs/claude-agents-relay.md
+  checksum: 0fa598d12f94ce501d127e19f2374dbd254e73a899a9bae5a4d65498e18cb421
+- filename: relay/src/apple.ts
+  checksum: c140923e51b2446ef5a34c584c4f3795e3b28d2ed0769bb24faee8175d3ce373
+- filename: app/src/agentIntents.ts
+  checksum: d8e4cd6ac0b47f7db681aa90f69d8e3eeb36b057ff91d35d6286880aea1e1256
+- filename: relay/test/agent.test.ts
+  checksum: 9b8093bfced7cc96695d25ade1fad9b8391bc86610e170b32d62704cf4310f7a
+- filename: relay/test/fake-dynamo.ts
+  checksum: 382ce0dc0ceb87dae33d3b7d6a04d080155b34d85f33b5f8597fd9134058323e
+- filename: relay/src/oauth.ts
+  checksum: 65210d198a93009ac5c69e03058b1639f368d70195092dbcf3875a05c7a463c7
+- filename: relay/test/relay.test.ts
+  checksum: abe497cb40b04218b402be110f88f7f6fb4371b7ddf52e0c8705af61fd78ca89
+- filename: relay/sst.config.ts
+  checksum: 09f381d37b87c1cf026dc8bf12e2b98e32ade3b021604dd9a21ba41e04d5c514
+- filename: relay/src/projection.ts
+  checksum: b1f600bd8ced65810d4200a48f3d3484fd299f529283f05e3059bb8afa2b3bbc
+- filename: relay/src/agent.ts
+  checksum: ddd56d26bb5651a16046ffd54f803b2c32d8a4eb567e14b463750bd96720e551
+- filename: app/src/relay.ts
+  checksum: 3d2c364e36fc36765321e6869f2403c4ef3dc6b22239b6960c82f50da3e3697d
+- filename: relay/src/mcp.ts
+  checksum: e6a48ec2f13b911e98b02270bbf3147b933273bc094c974d715a393aeb4df7ac
+version: "1.0"

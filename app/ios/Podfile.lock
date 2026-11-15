@@ -29,6 +29,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoAppleAuthentication (56.0.4):
+    - ExpoModulesCore
   - ExpoAsset (56.0.25):
     - ExpoModulesCore
   - ExpoAudio (56.0.13):
@@ -108,6 +110,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoSecureStore (56.0.4):
+    - ExpoModulesCore
   - ExpoSharing (56.0.26):
     - ExpoModulesCore
   - ExpoSpeech (56.0.3):
@@ -1975,6 +1979,7 @@ DEPENDENCIES:
   - EXApplication (from `../node_modules/expo-application/ios`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
+  - ExpoAppleAuthentication (from `../node_modules/expo-apple-authentication/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoAudio (from `../node_modules/expo-audio/ios`)
   - ExpoClipboard (from `../node_modules/expo-clipboard/ios`)
@@ -1992,6 +1997,7 @@ DEPENDENCIES:
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoScreenOrientation (from `../node_modules/expo-screen-orientation/ios`)
+  - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSpeech (from `../node_modules/expo-speech/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
@@ -2080,6 +2086,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-constants/ios"
   Expo:
     :path: "../node_modules/expo"
+  ExpoAppleAuthentication:
+    :path: "../node_modules/expo-apple-authentication/ios"
   ExpoAsset:
     :path: "../node_modules/expo-asset/ios"
   ExpoAudio:
@@ -2114,6 +2122,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-notifications/ios"
   ExpoScreenOrientation:
     :path: "../node_modules/expo-screen-orientation/ios"
+  ExpoSecureStore:
+    :path: "../node_modules/expo-secure-store/ios"
   ExpoSharing:
     :path: "../node_modules/expo-sharing/ios"
   ExpoSpeech:
@@ -2278,6 +2288,7 @@ SPEC CHECKSUMS:
   EXApplication: e6040c92edc5522accd62852342e6b14742d42c0
   EXConstants: 9d3531b15141ea2e24f4b48d51050291f83ccce7
   Expo: 668a9b2aa9e6bfc2586f2a0e42d1705e4cfc6f1d
+  ExpoAppleAuthentication: 3dd8ddd3016396a8171f06af8cc5e3e008e8eaf4
   ExpoAsset: 248b72382c8285f02fd6fb6d62ff6d2179071023
   ExpoAudio: 2970e2d332b52bfbb64d88564105df4b422c78a4
   ExpoClipboard: 342ae52697ff1cf89b8849bee624a9a320e77d3c
@@ -2295,6 +2306,7 @@ SPEC CHECKSUMS:
   ExpoModulesWorklets: 706d2511ac0e91743314d8f2e47683a924ae92f3
   ExpoNotifications: c26fd8557c759cec54abacfd54db48a4cffa70da
   ExpoScreenOrientation: 75ebc86da7f64e94d34d10a743acbd75f9814dd6
+  ExpoSecureStore: f1bd083c1b7b8d4142013ffcc0082d377d9f49f4
   ExpoSharing: 5e3ac486863cd9fd6d8a22b11295386609cc8d33
   ExpoSpeech: fe3706df8653ab8c16ff88251e33fab79b07a420
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d

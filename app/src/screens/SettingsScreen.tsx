@@ -24,6 +24,8 @@ import { hasDailySymbols } from '../symbols';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { useT } from '../i18n/I18nContext';
 import { UI_LANGS } from '../i18n';
+import { AgentsSection } from '../components/AgentsSection';
+import type { RelayState } from '../useRelay';
 
 type Props = {
   settings: Settings;
@@ -43,6 +45,8 @@ type Props = {
   restorePurchases: () => void;
   /** Re-read the stores after an import replaced what is on disk. */
   onImported: () => void;
+  /** Claude & agents: Sign in with Apple and the relay. */
+  relay: RelayState;
 };
 
 export function SettingsScreen({
@@ -61,6 +65,7 @@ export function SettingsScreen({
   purchasePro,
   restorePurchases,
   onImported,
+  relay,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -324,6 +329,9 @@ export function SettingsScreen({
 
           <Text style={styles.hint}>{t('settings.proHint')}</Text>
         </View>
+
+        <Text style={styles.sectionLabel}>{t('agents.title').toUpperCase()}</Text>
+        <AgentsSection relay={relay} />
 
         <Text style={styles.sectionLabel}>{t('settings.backup').toUpperCase()}</Text>
         <View style={styles.card}>
