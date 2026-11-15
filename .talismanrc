@@ -33,4 +33,10 @@ fileignoreconfig:
   checksum: 3d2c364e36fc36765321e6869f2403c4ef3dc6b22239b6960c82f50da3e3697d
 - filename: relay/src/mcp.ts
   checksum: e6a48ec2f13b911e98b02270bbf3147b933273bc094c974d715a393aeb4df7ac
+- filename: app/App.tsx
+  checksum: 8529f286d2ac4f48a9bff4f00d0ef35757a4ed94ff34f287d612fb3efd9eb2b2
+- filename: app/src/screens/SettingsScreen.tsx
+  checksum: af4d4d878b0e750cda8047d3f3a10d7ccb37e4468ce16b686a10d13003d8797b
+- filename: app/src/i18n/index.ts
+  checksum: 3d3ac44c543892e6c6a4cbacde622c0af2b63c9ae4534800c320c7db16966e99
 version: "1.0"
